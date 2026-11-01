@@ -65,7 +65,16 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => {
-    if (isAdmin) { loadUsers(""); loadDetail(null); loadHolds(); }
+    if (!isAdmin) return;
+    let active = true;
+    void (async () => {
+      await Promise.resolve();
+      if (!active) return;
+      loadUsers("");
+      loadDetail(null);
+      loadHolds();
+    })();
+    return () => { active = false; };
   }, [isAdmin, loadUsers, loadDetail, loadHolds]);
 
   async function decide(h: AdminHold, decision: "approve" | "reject") {

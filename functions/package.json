@@ -1,5 +1,5 @@
 {
-  "name": "fastpay-functions",
+  "name": "orbitpay-functions",
   "private": true,
   "main": "lib/index.js",
   "engines": {

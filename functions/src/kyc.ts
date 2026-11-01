@@ -44,7 +44,7 @@ export async function applyKycResult(uid: string, sessionId: string, outcome: "v
       ? { kycStatus: "verified", tier: Math.max(1, u.tier ?? 0), kycVerifiedAt: FieldValue.serverTimestamp(), kycError: FieldValue.delete() }
       : { kycStatus: "rejected", kycError: reason || "Verification failed" });
     tx.set(db.doc(`notifications/kyc_${sessionId}`), {
-      uid, kind: "kyc", amountCents: 0, fromEmail: "FastPay",
+      uid, kind: "kyc", amountCents: 0, fromEmail: "OrbitPay",
       note: outcome === "verified" ? "Your identity is verified" : `Verification failed: ${reason || "please try again"}`,
       read: false, createdAt: FieldValue.serverTimestamp(),
     });

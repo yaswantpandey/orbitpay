@@ -2,9 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Eye, EyeOff, Plus, Send, ArrowDownLeft, QrCode, Sparkles } from "lucide-react";
+import { Eye, EyeOff, Plus, Send, ArrowDownLeft, QrCode } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCents } from "@/lib/format";
 import { useDisplayRate, usePendingTopups, useWallet } from "@/lib/hooks";
 
@@ -12,7 +11,7 @@ export function BalanceCard() {
   const [masked, setMasked] = useState(false);
   const wallet = useWallet();
   const pending = usePendingTopups();
-  const { currency, rate, fetchedAt } = useDisplayRate();
+  const { currency, rate } = useDisplayRate();
   const balance = wallet?.balanceCents ?? 0;
   const pendingCents = pending.reduce((s, t) => s + t.amountCents, 0);
 
@@ -25,7 +24,7 @@ export function BalanceCard() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            FastPay Wallet
+            OrbitPay Wallet
           </span>
           <span className="flex size-2 rounded-full bg-emerald-500 animate-pulse" />
         </div>

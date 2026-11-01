@@ -14,7 +14,7 @@
       <stop offset="100%" stop-color="#0066FF" stop-opacity="0.1" />
     </linearGradient>
 
-    <!-- High-Energy FastPay F-Bolt Gradient -->
+    <!-- High-Energy OrbitPay O-Pulse Gradient -->
     <linearGradient id="fboltGrad" x1="10%" y1="0%" x2="90%" y2="100%">
       <stop offset="0%" stop-color="#00F5A0" />
       <stop offset="40%" stop-color="#00D9F5" />

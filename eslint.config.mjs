@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    ".worktree-upgrade/**",
+    ".npm-cache-upgrade/**",
+    "functions/**",
+    "scripts/**",
   ]),
 ]);
 

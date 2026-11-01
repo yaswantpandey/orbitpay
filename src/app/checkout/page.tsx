@@ -39,7 +39,10 @@ export default function CheckoutPage() {
 
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get("id");
-    if (!id) return setError("Missing checkout id");
+    if (!id) {
+      queueMicrotask(() => setError("Missing checkout id"));
+      return;
+    }
     httpsCallable<unknown, View>(functions, "getCheckout")({ checkoutId: id.slice(0, 200) })
       .then((r) => setView(r.data))
       .catch((e) => setError((e as Error).message));
@@ -97,7 +100,7 @@ export default function CheckoutPage() {
           ) : (
             <>
               <p className="text-center text-xs text-muted-foreground">
-                From your FastPay balance ({wallet ? formatCents(wallet.balanceCents) : "—"} available)
+                From your OrbitPay balance ({wallet ? formatCents(wallet.balanceCents) : "—"} available)
               </p>
               <Button className="w-full" size="lg" onClick={pay}
                 disabled={busy || (wallet ? wallet.balanceCents < view.amountCents : false)}>

@@ -72,7 +72,7 @@ export default function SignUpPage() {
       if (r.status === "mfa_required") {
         setResolver(r.resolver);
       } else {
-        toast.success("Account created successfully! Welcome to FastPay.");
+        toast.success("Account created successfully! Welcome to OrbitPay.");
       }
     } catch (err) {
       toast.error(mapAuthError(err));
@@ -88,7 +88,7 @@ export default function SignUpPage() {
       if (r.status === "mfa_required") {
         setResolver(r.resolver);
       } else {
-        toast.success("Welcome to FastPay!");
+        toast.success("Welcome to OrbitPay!");
       }
     } catch (err) {
       toast.error(mapAuthError(err));
@@ -121,7 +121,7 @@ export default function SignUpPage() {
         <div className="flex size-12 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-md">
           <Wallet className="size-6" />
         </div>
-        <h1 className="text-2xl font-bold tracking-tight">Create your FastPay account</h1>
+        <h1 className="text-2xl font-bold tracking-tight">Create your OrbitPay account</h1>
         <p className="text-xs text-muted-foreground">Start sending, holding, and receiving money globally</p>
       </div>
 
@@ -313,7 +313,7 @@ export default function SignUpPage() {
                     onChange={(e) => setAgreeTerms(e.target.checked)}
                   />
                   <label htmlFor="terms" className="text-muted-foreground">
-                    I agree to the FastPay Terms of Service and Privacy Policy.
+                    I agree to the OrbitPay Terms of Service and Privacy Policy.
                   </label>
                 </div>
 

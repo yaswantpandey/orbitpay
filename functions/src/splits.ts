@@ -26,7 +26,7 @@ export const createSplit = onCall(async (req) => {
   const payers = await Promise.all(shares.map((s) =>
     db.collection("users").where("email", "==", s.email).limit(1).get()));
   const missing = shares.filter((_, i) => payers[i].empty).map((s) => s.email);
-  if (missing.length) throw new HttpsError("not-found", `No FastPay account for ${missing.join(", ")}`);
+  if (missing.length) throw new HttpsError("not-found", `No OrbitPay account for ${missing.join(", ")}`);
 
   const splitRef = db.collection("splits").doc();
   const batch = db.batch();

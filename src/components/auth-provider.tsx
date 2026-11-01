@@ -25,7 +25,7 @@ const AuthContext = createContext<AuthState>({
 export const useAuth = () => useContext(AuthContext);
 
 const PUBLIC_ROUTES = ["/", "/login", "/signup"];
-const RETURN_KEY = "fastpay.returnTo";
+const RETURN_KEY = "orbitpay.returnTo";
 // In the emulator, TOTP is not supported, so 2FA enrollment is skipped there.
 // NEXT_PUBLIC_DISABLE_MFA=true temporarily turns 2FA off everywhere.
 const SKIP_MFA =

@@ -16,10 +16,10 @@ import {
   ChevronRight,
   UserPlus,
   Clock,
-  Sparkles,
+
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { BalanceCard } from "@/components/balance-card";
@@ -32,13 +32,11 @@ import {
   useLedger,
   usePaymentRequests,
   usePots,
-  useWallet,
 } from "@/lib/hooks";
 import { formatCents } from "@/lib/format";
 
 export default function DashboardPage() {
   const { user, profile } = useAuth();
-  const wallet = useWallet();
   const recent = useLedger(6);
   const contacts = useContacts();
   const pots = usePots();
@@ -60,8 +58,10 @@ export default function DashboardPage() {
       month: "short",
       day: "numeric",
     });
-    setGreeting(g);
-    setFormattedDate(d);
+    queueMicrotask(() => {
+      setGreeting(g);
+      setFormattedDate(d);
+    });
 
     const currentMonth = now.getMonth();
     const currentYear = now.getFullYear();
@@ -77,8 +77,10 @@ export default function DashboardPage() {
       }
     }
 
-    setMonthlyInCents(inCents);
-    setMonthlyOutCents(outCents);
+    queueMicrotask(() => {
+      setMonthlyInCents(inCents);
+      setMonthlyOutCents(outCents);
+    });
   }, [recent]);
 
   // Pending Actions

@@ -35,7 +35,11 @@ export default function MerchantPage() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (merchant) { setBusinessName(merchant.businessName); setWebhookUrl(merchant.webhookUrl); }
+    if (!merchant) return;
+    queueMicrotask(() => {
+      setBusinessName(merchant.businessName);
+      setWebhookUrl(merchant.webhookUrl);
+    });
   }, [merchant]);
 
   async function run(fn: () => Promise<unknown>, ok?: string) {
@@ -79,7 +83,7 @@ export default function MerchantPage() {
       <Card>
         <CardHeader>
           <CardTitle>{merchant ? "Merchant profile" : "Accept payments"}</CardTitle>
-          <CardDescription>Get paid by any FastPay user through a hosted checkout page or the API.</CardDescription>
+          <CardDescription>Get paid by any OrbitPay user through a hosted checkout page or the API.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <form onSubmit={saveProfile} className="grid gap-3 sm:grid-cols-2">
@@ -89,7 +93,7 @@ export default function MerchantPage() {
             </div>
             <div className="space-y-1">
               <Label htmlFor="hook">Webhook URL (optional)</Label>
-              <Input id="hook" type="url" placeholder="https://example.com/fastpay/webhook" value={webhookUrl} onChange={(e) => setWebhookUrl(e.target.value)} />
+              <Input id="hook" type="url" placeholder="https://example.com/orbitpay/webhook" value={webhookUrl} onChange={(e) => setWebhookUrl(e.target.value)} />
             </div>
             <Button type="submit" className="sm:col-span-2" disabled={busy}>{merchant ? "Save" : "Enable merchant mode"}</Button>
           </form>
@@ -101,7 +105,7 @@ export default function MerchantPage() {
                 <Button size="sm" variant="outline" onClick={() => copy(merchant.webhookSecret, "Secret")}><Copy className="size-4" /></Button>
               </div>
               <p className="text-xs text-muted-foreground">
-                Verify the <code>FastPay-Signature</code> header: <code>v1 = HMAC_SHA256(secret, t + &quot;.&quot; + body)</code>; reject if <code>t</code> is older than 5 minutes.
+                Verify the <code>OrbitPay-Signature</code> header: <code>v1 = HMAC_SHA256(secret, t + &quot;.&quot; + body)</code>; reject if <code>t</code> is older than 5 minutes.
               </p>
             </div>
           )}

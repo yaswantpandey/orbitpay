@@ -85,7 +85,7 @@ export default function WithdrawPage() {
         <CardContent>
           {!profile?.payoutAccountId ? (
             <div className="space-y-3 text-sm">
-              <p className="text-muted-foreground">Link a bank account through Stripe to withdraw. FastPay never sees your account number.</p>
+              <p className="text-muted-foreground">Link a bank account through Stripe to withdraw. OrbitPay never sees your account number.</p>
               <Button className="w-full" onClick={linkBank} disabled={busy}>{busy ? "Opening…" : "Link bank account"}</Button>
             </div>
           ) : draft ? (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { doc, onSnapshot } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { v4 as uuid } from "uuid";
@@ -40,15 +40,17 @@ export default function CurrenciesPage() {
   const [amount, setAmount] = useState("");
   const [quote, setQuote] = useState<{ amountMinor: number; toMinor: number; rate: number; key: string } | null>(null);
   const [busy, setBusy] = useState(false);
-  const [stale, setStale] = useState(false);
+  const now = useSyncExternalStore(
+    () => () => {},
+    () => Date.now(),
+    () => 0
+  );
+  const stale = fx && now ? now - fx.fetchedAt.toMillis() > 24 * 3600_000 : false;
 
   useEffect(() => {
     if (!user) return;
     return onSnapshot(doc(db, "fxRates", "latest"), (s) => setFx(s.exists() ? (s.data() as FxRates) : null));
   }, [user]);
-  useEffect(() => {
-    if (fx) setStale(Date.now() - fx.fetchedAt.toMillis() > 24 * 3600_000);
-  }, [fx]);
 
   const held = useMemo(() => {
     const m: Record<string, number> = { USD: wallet?.balanceCents ?? 0 };

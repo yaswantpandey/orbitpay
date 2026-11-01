@@ -127,7 +127,7 @@ export default function LoginPage() {
         <div className="flex size-12 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-md">
           <Wallet className="size-6" />
         </div>
-        <h1 className="text-2xl font-bold tracking-tight">FastPay</h1>
+        <h1 className="text-2xl font-bold tracking-tight">OrbitPay</h1>
         <p className="text-xs text-muted-foreground">Global Digital Wallet & Instant Borderless Payments</p>
       </div>
 

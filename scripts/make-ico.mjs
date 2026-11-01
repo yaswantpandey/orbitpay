@@ -35,3 +35,4 @@ export async function createIco(pngBuffers) {
     ...pngBuffers.map((b) => b.buffer),
   ]);
 }
+

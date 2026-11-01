@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { httpsCallable } from "firebase/functions";
 import { Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -28,8 +28,7 @@ export default function InvoicesPage() {
   const [memo, setMemo] = useState("");
   const [lines, setLines] = useState<Line[]>([emptyLine()]);
   const [busy, setBusy] = useState<string | null>(null);
-  const [today, setToday] = useState<string>();
-  useEffect(() => setToday(new Date().toISOString().slice(0, 10)), []);
+  const today = useSyncExternalStore(() => () => {}, () => new Date().toISOString().slice(0, 10), () => "");
 
   const cents = lines.map((l) => {
     const unit = dollarsToCents(l.unitPrice);
@@ -94,7 +93,7 @@ export default function InvoicesPage() {
       <Card>
         <CardHeader>
           <CardTitle>New invoice</CardTitle>
-          <CardDescription>The recipient pays from their FastPay wallet using the same email.</CardDescription>
+          <CardDescription>The recipient pays from their OrbitPay wallet using the same email.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
@@ -165,6 +164,11 @@ function InvoiceList({ title, items, who, busy, actions, onAction }: {
   actions: (i: Invoice) => Action[];
   onAction: (i: Invoice, a: Action) => void;
 }) {
+  const now = useSyncExternalStore(
+    () => () => {},
+    () => Date.now(),
+    () => 0
+  );
   return (
     <Card>
       <CardHeader><CardTitle>{title}</CardTitle></CardHeader>
@@ -174,7 +178,7 @@ function InvoiceList({ title, items, who, busy, actions, onAction }: {
         ) : (
           <ul className="divide-y">
             {items.map((inv) => {
-              const overdue = inv.status === "sent" && inv.dueDate?.toMillis() < Date.now();
+              const overdue = inv.status === "sent" && !!now && inv.dueDate?.toMillis() < now;
               const status = overdue ? "overdue" : inv.status;
               return (
                 <li key={inv.id} className="flex flex-wrap items-center justify-between gap-4 py-3">

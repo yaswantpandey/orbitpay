@@ -41,9 +41,14 @@ export function Nav() {
   const isAdmin = useIsAdmin();
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const [prevPath, setPrevPath] = useState(pathname);
   const ref = useRef<HTMLDivElement>(null);
 
-  useEffect(() => setOpen(false), [pathname]);
+  if (prevPath !== pathname) {
+    setPrevPath(pathname);
+    setOpen(false);
+  }
+
   useEffect(() => {
     if (!open) return;
     const close = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
@@ -58,7 +63,7 @@ export function Nav() {
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-2.5">
           <Link href="/" className="flex items-center gap-2 text-lg font-bold tracking-tight">
             <Wallet className="size-5 text-primary" />
-            <span>FastPay</span>
+            <span>OrbitPay</span>
           </Link>
           <div className="flex items-center gap-2">
             <ThemeToggle />
@@ -92,7 +97,7 @@ export function Nav() {
         .toUpperCase()
     : user?.email
     ? user.email.slice(0, 2).toUpperCase()
-    : "FP";
+    : "OP";
 
   return (
     <header className="sticky top-0 z-40 border-b bg-background/90 backdrop-blur-md">
@@ -108,7 +113,7 @@ export function Nav() {
 
         <Link href="/dashboard" className="flex items-center gap-1.5 font-bold text-base tracking-tight">
           <Wallet className="size-4.5 text-primary" />
-          <span>FastPay</span>
+          <span>OrbitPay</span>
         </Link>
 
         <div className="flex items-center gap-1">
@@ -128,7 +133,7 @@ export function Nav() {
       <div className="hidden md:flex mx-auto max-w-5xl items-center gap-1 px-4 py-2">
         <Link href="/dashboard" className="mr-4 flex items-center gap-2 text-lg font-bold">
           <Wallet className="size-5 text-primary" />
-          <span>FastPay</span>
+          <span>OrbitPay</span>
         </Link>
         {PRIMARY.map(({ href, label, icon: Icon }) => (
           <Link key={href} href={href}

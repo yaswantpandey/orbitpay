@@ -3,7 +3,7 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { convertSchema } from "./schemas";
 import { parse, requireMoneyMover, audit } from "./middleware";
 
-export const SPREAD = 0.005; // 0.5% kept by FastPay on every conversion
+export const SPREAD = 0.005; // 0.5% kept by OrbitPay on every conversion
 const MAX_RATE_AGE_MS = 24 * 60 * 60 * 1000;
 const DECIMALS: Record<string, number> = { JPY: 0 };
 export const decimals = (c: string) => DECIMALS[c] ?? 2;
@@ -15,7 +15,7 @@ export function crossRate(rates: Record<string, number>, from: string, to: strin
   return r(to) / r(from);
 }
 
-/** Destination minor units after spread, rounded down so FastPay never pays out more than it took in. */
+/** Destination minor units after spread, rounded down so OrbitPay never pays out more than it took in. */
 export function convertMinor(amountMinor: number, from: string, to: string, rate: number) {
   const major = amountMinor / 10 ** decimals(from);
   return Math.floor(major * rate * (1 - SPREAD) * 10 ** decimals(to) + 1e-9);

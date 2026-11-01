@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { httpsCallable } from "firebase/functions";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -64,7 +64,7 @@ export default function RequestsPage() {
       <Card>
         <CardHeader>
           <CardTitle>Request money</CardTitle>
-          <CardDescription>The payer must have a FastPay account. Requests expire after 7 days.</CardDescription>
+          <CardDescription>The payer must have an OrbitPay account. Requests expire after 7 days.</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={create} className="grid gap-4 sm:grid-cols-2">
@@ -106,6 +106,11 @@ function RequestList({ title, items, counterparty, actions }: {
   counterparty: (r: PaymentRequest) => string;
   actions?: (r: PaymentRequest) => React.ReactNode;
 }) {
+  const now = useSyncExternalStore(
+    () => () => {},
+    () => Date.now(),
+    () => 0
+  );
   return (
     <Card>
       <CardHeader><CardTitle>{title}</CardTitle></CardHeader>
@@ -116,7 +121,7 @@ function RequestList({ title, items, counterparty, actions }: {
           <ul className="divide-y">
             {items.map((r) => {
               // Expiry is enforced server-side; this only reflects it before the daily job runs.
-              const status = r.status === "pending" && r.expiresAt?.toMillis() < Date.now() ? "expired" : r.status;
+              const status = r.status === "pending" && now > 0 && r.expiresAt?.toMillis() < now ? "expired" : r.status;
               return (
                 <li key={r.id} className="flex items-center justify-between gap-4 py-3">
                   <div className="min-w-0">

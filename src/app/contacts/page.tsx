@@ -132,7 +132,7 @@ export default function ContactsPage() {
       <Card className="h-fit">
         <CardHeader>
           <CardTitle>My pay code</CardTitle>
-          <CardDescription>Anyone with FastPay can scan this to pay you.</CardDescription>
+          <CardDescription>Anyone with OrbitPay can scan this to pay you.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           {qr ? (

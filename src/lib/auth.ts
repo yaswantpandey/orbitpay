@@ -77,7 +77,7 @@ export async function resolveTotpSignIn(resolver: MultiFactorResolver, code: str
 export async function startTotpEnrollment(user: User) {
   const session = await multiFactor(user).getSession();
   const secret = await TotpMultiFactorGenerator.generateSecret(session);
-  const qrUrl = secret.generateQrCodeUrl(user.email ?? "user", "FastPay");
+  const qrUrl = secret.generateQrCodeUrl(user.email ?? "user", "OrbitPay");
   return { secret, qrUrl };
 }
 

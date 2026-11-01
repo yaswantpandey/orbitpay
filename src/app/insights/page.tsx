@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCents } from "@/lib/format";
 import { useLedger, useMonthStats } from "@/lib/hooks";
@@ -21,8 +21,7 @@ const monthLabel = (m: string) =>
 export default function InsightsPage() {
   const stats = useMonthStats(MONTHS);
   const ledger = useLedger(300);
-  const [monthKeys, setMonthKeys] = useState<string[]>([]);
-  useEffect(() => setMonthKeys(lastMonths(MONTHS)), []);
+  const monthKeys = useSyncExternalStore(() => () => {}, () => lastMonths(MONTHS), () => []);
 
   const months = useMemo(() => {
     const byMonth = new Map(stats.map((s) => [s.month, s]));

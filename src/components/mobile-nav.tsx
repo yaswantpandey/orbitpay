@@ -139,7 +139,7 @@ export function MobileNav() {
             </SheetTrigger>
             <SheetContent side="bottom" className="rounded-t-3xl pb-8 max-h-[85vh] overflow-y-auto">
               <SheetHeader className="text-left pb-2">
-                <SheetTitle className="text-lg font-bold">FastPay Hub</SheetTitle>
+                <SheetTitle className="text-lg font-bold">OrbitPay Hub</SheetTitle>
                 <SheetDescription className="text-xs">
                   All tools, currencies and payment features in one place.
                 </SheetDescription>
@@ -175,7 +175,7 @@ export function MobileNav() {
                   className="w-full flex items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-semibold text-destructive bg-destructive/10 hover:bg-destructive/15 transition active:scale-98"
                 >
                   <LogOut className="size-4" />
-                  <span>Sign out of FastPay</span>
+                  <span>Sign out of OrbitPay</span>
                 </button>
               </div>
             </SheetContent>

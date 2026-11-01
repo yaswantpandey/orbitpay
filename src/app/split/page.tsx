@@ -74,7 +74,7 @@ export default function SplitPage() {
       <Card>
         <CardHeader>
           <CardTitle>Split a bill</CardTitle>
-          <CardDescription>Each person gets a payment request for their share. Everyone needs a FastPay account.</CardDescription>
+          <CardDescription>Each person gets a payment request for their share. Everyone needs an OrbitPay account.</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={create} className="space-y-4">

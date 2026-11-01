@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { httpsCallable } from "firebase/functions";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -24,9 +24,12 @@ export default function RecurringPage() {
   const [note, setNote] = useState("");
   const [frequency, setFrequency] = useState<"weekly" | "monthly">("monthly");
   const [startDate, setStartDate] = useState("");
-  const [today, setToday] = useState<string>();
+  const today = useSyncExternalStore(
+    () => () => {},
+    () => new Date().toISOString().slice(0, 10),
+    () => ""
+  );
   const [busy, setBusy] = useState<string | null>(null);
-  useEffect(() => setToday(new Date().toISOString().slice(0, 10)), []);
 
   async function create(e: React.FormEvent) {
     e.preventDefault();

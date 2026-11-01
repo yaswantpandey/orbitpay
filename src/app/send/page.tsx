@@ -37,9 +37,15 @@ export default function SendPage() {
   // Prefill from a pay link or contact (/send?to=&amount=&note=).
   useEffect(() => {
     const p = new URLSearchParams(window.location.search);
-    if (p.get("to")) setToEmail(p.get("to")!.slice(0, 200));
-    if (p.get("amount") && dollarsToCents(p.get("amount")!) !== null) setAmount(p.get("amount")!);
-    if (p.get("note")) setNote(p.get("note")!.slice(0, 200));
+    const to = p.get("to");
+    const amt = p.get("amount");
+    const nt = p.get("note");
+    if (!to && !amt && !nt) return;
+    queueMicrotask(() => {
+      if (to) setToEmail(to.slice(0, 200));
+      if (amt && dollarsToCents(amt) !== null) setAmount(amt);
+      if (nt) setNote(nt.slice(0, 200));
+    });
   }, []);
 
   function review(e: React.FormEvent) {

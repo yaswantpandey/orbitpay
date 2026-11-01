@@ -26,7 +26,7 @@ export default function Home() {
     <div className="flex flex-col items-center justify-center py-12 sm:py-20 text-center">
       {/* Hero Badge */}
       <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
-        <Zap className="size-3.5" /> Fast, Simple & Secure Digital Wallet
+        <Zap className="size-3.5" /> OrbitPay by Ecotech Services — Fast, Simple & Secure
       </div>
 
       <h1 className="max-w-2xl text-4xl font-extrabold tracking-tight sm:text-6xl">
@@ -34,7 +34,7 @@ export default function Home() {
       </h1>
 
       <p className="mt-4 max-w-xl text-base text-muted-foreground sm:text-lg">
-        FastPay gives you instant money transfers, multi-currency views, automated splits,
+        OrbitPay gives you instant money transfers, multi-currency views, automated splits,
         and bank-grade two-factor security — all from a single lightweight dashboard.
       </p>
 

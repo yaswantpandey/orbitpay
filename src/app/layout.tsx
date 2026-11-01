@@ -23,8 +23,8 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "FastPay — Global Digital Wallet",
-  description: "Hold, send and receive money worldwide.",
+  title: "OrbitPay — Global Digital Wallet | Ecotech Services",
+  description: "Hold, send and receive money worldwide with instant borderless payments.",
   manifest: "/manifest.json",
   icons: {
     icon: [
@@ -38,7 +38,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "FastPay",
+    title: "OrbitPay",
   },
 };
 

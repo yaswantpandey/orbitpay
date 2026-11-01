@@ -53,7 +53,14 @@ export default function HistoryPage() {
     setLoading(false);
   }, [user, type, from, to]);
 
-  useEffect(() => { load(null); }, [load]);
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      await Promise.resolve();
+      if (active) load(null);
+    })();
+    return () => { active = false; };
+  }, [load]);
 
   const s = search.trim().toLowerCase();
   const visible = s
@@ -77,7 +84,7 @@ export default function HistoryPage() {
     const blob = new Blob([rows.map((r) => r.map(esc).join(",")).join("\n")], { type: "text/csv" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = `fastpay-history-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `orbitpay-history-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(a.href);
   }

@@ -108,7 +108,7 @@ export const invoiceAction = onCall(async (req) => {
   return { status: "paid", txId: result.txId };
 });
 
-/** In-app notification if the recipient has a FastPay account; otherwise an email invite. */
+/** In-app notification if the recipient has an OrbitPay account; otherwise an email invite. */
 async function notifyRecipient(
   w: FirebaseFirestore.WriteBatch | FirebaseFirestore.Transaction,
   invoiceId: string, recipientEmail: string, fromEmail: string, amountCents: number
@@ -118,7 +118,7 @@ async function notifyRecipient(
     queueMail(w, `invoice_${invoiceId}`, {
       to: recipientEmail,
       subject: `${fromEmail} sent you an invoice for ${usd(amountCents)}`,
-      text: `${fromEmail} sent you an invoice for ${usd(amountCents)}. Sign up for FastPay with this email address to view and pay it.`,
+      text: `${fromEmail} sent you an invoice for ${usd(amountCents)}. Sign up for OrbitPay with this email address to view and pay it.`,
       link: "/invoices",
     });
     return;
@@ -140,7 +140,7 @@ async function renderPdf(inv: DocumentData): Promise<string> {
   const text = (s: string, x: number, opts: { size?: number; f?: typeof font; color?: typeof grey } = {}) =>
     page.drawText(s, { x, y, size: opts.size ?? 10, font: opts.f ?? font, color: opts.color });
 
-  text("FastPay", 50, { size: 20, f: bold });
+  text("OrbitPay", 50, { size: 20, f: bold });
   text(`INVOICE ${inv.number}`, 380, { size: 14, f: bold });
   y -= 20;
   text(`Status: ${String(inv.status).toUpperCase()}`, 380, { color: grey });

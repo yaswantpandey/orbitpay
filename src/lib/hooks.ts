@@ -71,10 +71,10 @@ export function useIsAdmin() {
   const { user } = useAuth();
   const [admin, setAdmin] = useState(false);
   useEffect(() => {
-    if (!user) return setAdmin(false);
+    if (!user) return;
     user.getIdTokenResult().then((t) => setAdmin(t.claims.admin === true)).catch(() => setAdmin(false));
   }, [user]);
-  return admin;
+  return user ? admin : false;
 }
 
 export function usePaymentRequests() {

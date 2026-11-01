@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import type { TotpSecret } from "firebase/auth";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -11,6 +12,7 @@ import { useAuth } from "@/components/auth-provider";
 import { startTotpEnrollment, finishTotpEnrollment, signOut } from "@/lib/auth";
 
 export default function Setup2faPage() {
+  const router = useRouter();
   const { user } = useAuth();
   const [secret, setSecret] = useState<TotpSecret | null>(null);
   const [qrUrl, setQrUrl] = useState("");
@@ -41,7 +43,7 @@ export default function Setup2faPage() {
     try {
       await finishTotpEnrollment(user, secret, code);
       toast.success("Two-factor authentication enabled");
-      window.location.assign("/dashboard");
+      router.push("/dashboard");
     } catch {
       toast.error("Invalid code. Try again.");
     } finally {

@@ -5,7 +5,7 @@ import { logger } from "firebase-functions";
 import { IS_EMULATOR } from "./middleware";
 
 export const RESEND_API_KEY = defineSecret("RESEND_API_KEY");
-const FROM = process.env.EMAIL_FROM ?? "FastPay <notifications@fastpay.example>";
+const FROM = process.env.EMAIL_FROM ?? "OrbitPay <notifications@orbitpay.example>";
 const APP_URL = process.env.APP_URL ?? "http://localhost:3001";
 const DEV_EMAIL = IS_EMULATOR;
 
@@ -63,7 +63,7 @@ export const deliverMail = onDocumentCreated(
     if (!m || m.status !== "queued") return;
     const ref = event.data!.ref;
     const html = `<p>${esc(m.text)}</p>` +
-      (m.link ? `<p><a href="${esc(APP_URL + m.link)}">Open FastPay</a></p>` : "") +
+      (m.link ? `<p><a href="${esc(APP_URL + m.link)}">Open OrbitPay</a></p>` : "") +
       `<p style="color:#888;font-size:12px">You can turn off email notifications in Settings.</p>`;
     if (DEV_EMAIL) {
       logger.info(`[dev email] to=${m.to} subject="${m.subject}"`, { text: m.text });

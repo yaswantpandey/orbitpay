@@ -17,7 +17,7 @@ export const createRequest = onCall(async (req) => {
   }
 
   const payers = await db.collection("users").where("email", "==", payerEmail).limit(1).get();
-  if (payers.empty) throw new HttpsError("not-found", "No FastPay user with that email");
+  if (payers.empty) throw new HttpsError("not-found", "No OrbitPay user with that email");
   const payerUid = payers.docs[0].id;
 
   const ref = db.collection("paymentRequests").doc();

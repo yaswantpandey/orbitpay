@@ -116,8 +116,8 @@ async function buildAll() {
 
   // 6. Web Manifest
   const manifest = {
-    name: "FastPay — Global Digital Wallet",
-    short_name: "FastPay",
+    name: "OrbitPay — Global Digital Wallet",
+    short_name: "OrbitPay",
     description: "Hold, send and receive money worldwide with instant borderless payments.",
     start_url: "/",
     display: "standalone",
@@ -149,3 +149,4 @@ buildAll().catch((err) => {
   console.error(err);
   process.exit(1);
 });
+

@@ -1,6 +1,6 @@
-# FastPay ⚡
+# OrbitPay ⚡
 
-A modern, full-stack digital wallet and payment platform built with **Next.js 16**, **TypeScript**, **Tailwind CSS v4**, and **Firebase** (Auth, Firestore, Cloud Functions). FastPay supports P2P transfers, multi-currency balances, merchant checkouts, recurring payments, bill splitting, savings goals, fraud detection, and multi-tier KYC verification.
+A modern, full-stack digital wallet and payment platform by **Ecotech Services**, built with **Next.js 16**, **TypeScript**, **Tailwind CSS v4**, and **Firebase** (Auth, Firestore, Cloud Functions). OrbitPay supports P2P transfers, multi-currency balances, merchant checkouts, recurring payments, bill splitting, savings goals, fraud detection, and multi-tier KYC verification.
 
 ---
 
@@ -161,4 +161,4 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 ---
 
 ## 📄 License
-This project is private and proprietary.
+Proprietary — Ecotech Services. All rights reserved.

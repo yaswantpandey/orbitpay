@@ -14,16 +14,20 @@ import { signOut } from "@/lib/auth";
 import { useTheme } from "next-themes";
 import { Sun, Moon, Monitor } from "lucide-react";
 
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 
 export default function SettingsPage() {
   const { user, profile, mfaEnrolled } = useAuth();
   const { theme, setTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
+  const mounted = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false
+  );
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+
+
+
 
   async function changeCurrency(displayCurrency: string) {
     if (!user) return;

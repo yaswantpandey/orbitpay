@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { httpsCallable } from "firebase/functions";
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
 import { v4 as uuid } from "uuid";
@@ -91,6 +92,7 @@ export default function AddMoneyPage() {
 }
 
 function PayForm({ amountCents, onCancel }: { amountCents: number; onCancel: () => void }) {
+  const router = useRouter();
   const stripe = useStripe();
   const elements = useElements();
   const [busy, setBusy] = useState(false);
@@ -108,7 +110,7 @@ function PayForm({ amountCents, onCancel }: { amountCents: number; onCancel: () 
     if (error) return toast.error(error.message ?? "Payment failed");
     // The wallet is credited by the Stripe webhook, not here.
     toast.success("Payment submitted. Your balance will update shortly.");
-    window.location.assign("/dashboard");
+    router.push("/dashboard");
   }
 
   return (

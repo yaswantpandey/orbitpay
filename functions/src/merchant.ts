@@ -278,7 +278,11 @@ export async function attemptDelivery(id: string) {
   try {
     const r = await fetch(d.url, {
       method: "POST", redirect: "manual", signal: AbortSignal.timeout(10_000),
-      headers: { "content-type": "application/json", "fastpay-signature": signPayload(merchant.data()!.webhookSecret, body) },
+      headers: {
+        "content-type": "application/json",
+        "orbitpay-signature": signPayload(merchant.data()!.webhookSecret, body),
+        "fastpay-signature": signPayload(merchant.data()!.webhookSecret, body),
+      },
       body,
     });
     status = r.status;
