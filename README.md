@@ -105,8 +105,8 @@ A modern, full-stack digital wallet and payment platform by **Ecotech Services**
 ### 1. Installation
 Clone the repository and install dependencies:
 ```bash
-git clone https://github.com/yaswantpandey/fastpay.git
-cd fastpay
+git clone https://github.com/yaswantpandey/orbitpay.git
+cd orbitpay
 npm install
 npm --prefix functions install
 ```
