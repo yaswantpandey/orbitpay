@@ -1,8 +1,8 @@
 import { getFirestore, FieldValue, Timestamp } from "firebase-admin/firestore";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { holdDecisionSchema } from "./schemas";
-import { parse, requireAdmin, audit, bumpStats, dayKey } from "./middleware";
-import { executeTransfer, TransferInput } from "./transfer";
+import { parse, requireAdmin, audit, bumpStats, dayKey, CALLABLE_OPTIONS } from "./middleware";
+import { executeTransfer, TransferInput, computePayloadHash } from "./transfer";
 
 /** Tunable thresholds. Amounts in cents. */
 export const RISK = {
@@ -15,6 +15,13 @@ export const RISK = {
 
 export type RiskDecision = { action: "allow" | "hold" | "block"; reasons: string[] };
 
+/**
+ * Note on velocity limits:
+ * Firestore transactions only support reading individual document references (tx.get(docRef)).
+ * Aggregate queries (such as collection count() queries) cannot be executed inside a Firestore transaction.
+ * Therefore, velocity is pre-evaluated immediately prior to the transaction, and the transactional
+ * daily limit check (dailyTotals) enforces a hard atomic monetary cap inside the transaction.
+ */
 export async function evaluateTransferRisk(
   fromUid: string, user: FirebaseFirestore.DocumentData, toUid: string, amountCents: number
 ): Promise<RiskDecision> {
@@ -55,23 +62,34 @@ export async function placeHold(t: TransferInput, reasons: string[]) {
   const holdRef = db.doc(`holds/${holdId}`);
   const walletRef = db.doc(`wallets/${t.fromUid}`);
   const dailyRef = db.doc(`dailyTotals/${t.fromUid}_${dayKey()}`);
+  const payloadHash = t.payloadHash ?? computePayloadHash(t.toUid, t.amountCents, t.note);
+
   return db.runTransaction(async (tx) => {
     const [existing, wallet, daily] = await Promise.all([tx.get(holdRef), tx.get(walletRef), tx.get(dailyRef)]);
-    if (existing.exists) return { holdId, replayed: true };
-    const bal = wallet.data()!.balanceCents as number;
+    if (existing.exists) {
+      const data = existing.data()!;
+      if (data.payloadHash && data.payloadHash !== payloadHash) {
+        throw new HttpsError("invalid-argument", "Idempotency key reused with different transfer parameters");
+      }
+      return { holdId, replayed: true };
+    }
+    const bal = wallet.data()?.balanceCents;
+    if (typeof bal !== "number" || Number.isNaN(bal)) {
+      throw new HttpsError("internal", "Corrupt wallet balance state");
+    }
     if (bal < t.amountCents) throw new HttpsError("failed-precondition", "Insufficient funds");
-    const sentToday = daily.exists ? (daily.data()!.sentCents as number) : 0;
+    const sentToday = daily.exists ? (daily.data()?.sentCents as number) ?? 0 : 0;
     if (sentToday + t.amountCents > t.perDayLimit) throw new HttpsError("resource-exhausted", "Daily limit exceeded");
     const now = FieldValue.serverTimestamp();
     const after = bal - t.amountCents;
     tx.update(walletRef, { balanceCents: after, version: FieldValue.increment(1), updatedAt: now });
-    tx.set(dailyRef, { sentCents: sentToday + t.amountCents }, { merge: true });
+    tx.set(dailyRef, { sentCents: FieldValue.increment(t.amountCents) }, { merge: true });
     bumpStats(tx, t.fromUid, "outCents", t.amountCents);
     tx.set(db.doc(`ledger/${holdId}_hold`), {
       txId: holdId, uid: t.fromUid, type: "hold", amountCents: -t.amountCents, balanceAfterCents: after,
       counterpartyEmail: t.toEmail, note: "Held for review", createdAt: now,
     });
-    tx.set(holdRef, { ...t, reasons, status: "held", createdAt: now });
+    tx.set(holdRef, { ...t, payloadHash, reasons, status: "held", createdAt: now });
     tx.set(db.doc(`notifications/${holdId}_hold`), {
       uid: t.fromUid, kind: "hold", amountCents: t.amountCents, fromEmail: t.toEmail,
       note: "Your payment is being reviewed for your security. We'll let you know shortly.", read: false, createdAt: now,
@@ -103,7 +121,11 @@ export async function decideHold(holdId: string, decision: "approve" | "reject",
     const cur = (await tx.get(holdRef)).data();
     if (cur?.status !== "held") throw new HttpsError("failed-precondition", `Hold is ${cur?.status}`);
     const walletRef = db.doc(`wallets/${h.fromUid}`);
-    const after = ((await tx.get(walletRef)).data()!.balanceCents as number) + h.amountCents;
+    const bal = (await tx.get(walletRef)).data()?.balanceCents;
+    if (typeof bal !== "number" || Number.isNaN(bal)) {
+      throw new HttpsError("internal", "Corrupt wallet balance state");
+    }
+    const after = bal + h.amountCents;
     const now = FieldValue.serverTimestamp();
     tx.update(walletRef, { balanceCents: after, version: FieldValue.increment(1), updatedAt: now });
     bumpStats(tx, h.fromUid, "outCents", -h.amountCents);
@@ -120,7 +142,7 @@ export async function decideHold(holdId: string, decision: "approve" | "reject",
   return { status: "rejected" as const, replayed: false };
 }
 
-export const adminDecideHold = onCall(async (req) => {
+export const adminDecideHold = onCall(CALLABLE_OPTIONS, async (req) => {
   const adminUid = requireAdmin(req);
   const { holdId, decision, reason } = parse(holdDecisionSchema, req.data);
   const r = await decideHold(holdId, decision, adminUid, reason);
@@ -128,7 +150,7 @@ export const adminDecideHold = onCall(async (req) => {
   return { status: r.status };
 });
 
-export const adminListHolds = onCall(async (req) => {
+export const adminListHolds = onCall(CALLABLE_OPTIONS, async (req) => {
   requireAdmin(req);
   const snap = await getFirestore().collection("holds").where("status", "==", "held").orderBy("createdAt", "asc").limit(100).get();
   return {

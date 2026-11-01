@@ -1,7 +1,8 @@
+import { createHash } from "crypto";
 import { getFirestore, FieldValue, Firestore, DocumentReference, DocumentData } from "firebase-admin/firestore";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { transferSchema } from "./schemas";
-import { parse, requireMoneyMover, audit, dayKey, bumpStats } from "./middleware";
+import { parse, requireMoneyMover, audit, dayKey, bumpStats, CALLABLE_OPTIONS } from "./middleware";
 import { evaluateTransferRisk, placeHold } from "./risk";
 
 export interface TransferInput {
@@ -13,6 +14,7 @@ export interface TransferInput {
   note: string;
   idempotencyKey: string;
   perDayLimit: number;
+  payloadHash?: string;
   /** Set for admin reversals: ledger entries become `refund` and the daily limit is skipped. */
   reversalOf?: string;
   /**
@@ -20,6 +22,13 @@ export interface TransferInput {
    * daily total and stats) when the hold was placed, so only the recipient side runs here.
    */
   fromHoldEntryId?: string;
+}
+
+/**
+ * Deterministic hash of transfer payload to detect parameter mismatch on idempotency key replay.
+ */
+export function computePayloadHash(toUid: string, amountCents: number, note: string): string {
+  return createHash("sha256").update(`${toUid}:${amountCents}:${note}`).digest("hex");
 }
 
 /**
@@ -45,28 +54,47 @@ export async function executeTransfer(db: Firestore, t: TransferInput, hook?: Se
   const fromWalletRef = db.doc(`wallets/${t.fromUid}`);
   const toWalletRef = db.doc(`wallets/${t.toUid}`);
   const dailyRef = db.doc(`dailyTotals/${t.fromUid}_${dayKey()}`);
+  const payloadHash = t.payloadHash ?? computePayloadHash(t.toUid, t.amountCents, t.note);
 
   return db.runTransaction(async (tx) => {
     const existing = await tx.get(transferRef);
-    if (existing.exists) return { txId, replayed: true };
+    if (existing.exists) {
+      const data = existing.data()!;
+      if (data.payloadHash && data.payloadHash !== payloadHash) {
+        throw new HttpsError("invalid-argument", "Idempotency key reused with different transfer parameters");
+      }
+      return { txId, replayed: true };
+    }
 
     if (hook) hook.check((await tx.get(hook.ref)).data());
 
-    const [fromSnap, toSnap, dailySnap] = await Promise.all([
+    const held = !!t.fromHoldEntryId;
+    const holdEntryRef = held ? db.doc(`ledger/${t.fromHoldEntryId}`) : null;
+    const [fromSnap, toSnap, dailySnap, holdEntrySnap] = await Promise.all([
       tx.get(fromWalletRef),
       tx.get(toWalletRef),
       tx.get(dailyRef),
+      holdEntryRef ? tx.get(holdEntryRef) : Promise.resolve(null),
     ]);
     if (!fromSnap.exists || !toSnap.exists) throw new HttpsError("not-found", "Wallet not found");
-    const held = !!t.fromHoldEntryId;
+    if (held) {
+      if (!holdEntrySnap || !holdEntrySnap.exists) throw new HttpsError("not-found", "Hold ledger entry not found");
+      const holdEntryData = holdEntrySnap.data()!;
+      if (holdEntryData.uid !== t.fromUid || holdEntryData.txId !== txId || holdEntryData.type !== "hold") {
+        throw new HttpsError("failed-precondition", "Invalid hold ledger entry ownership or state");
+      }
+    }
 
-    const sentToday = dailySnap.exists ? (dailySnap.data()!.sentCents as number) : 0;
+    const sentToday = dailySnap.exists ? (dailySnap.data()?.sentCents as number) ?? 0 : 0;
     if (!t.reversalOf && !held && sentToday + t.amountCents > t.perDayLimit) {
       throw new HttpsError("resource-exhausted", "Daily limit exceeded");
     }
 
-    const fromBal = fromSnap.data()!.balanceCents as number;
-    const toBal = toSnap.data()!.balanceCents as number;
+    const fromBal = fromSnap.data()?.balanceCents;
+    const toBal = toSnap.data()?.balanceCents;
+    if (typeof fromBal !== "number" || typeof toBal !== "number" || Number.isNaN(fromBal) || Number.isNaN(toBal)) {
+      throw new HttpsError("internal", "Corrupt wallet balance state");
+    }
     if (!held && fromBal < t.amountCents) throw new HttpsError("failed-precondition", "Insufficient funds");
 
     const now = FieldValue.serverTimestamp();
@@ -75,7 +103,7 @@ export async function executeTransfer(db: Firestore, t: TransferInput, hook?: Se
 
     if (!held) {
       tx.update(fromWalletRef, { balanceCents: fromAfter, version: FieldValue.increment(1), updatedAt: now });
-      if (!t.reversalOf) tx.set(dailyRef, { sentCents: sentToday + t.amountCents }, { merge: true });
+      if (!t.reversalOf) tx.set(dailyRef, { sentCents: FieldValue.increment(t.amountCents) }, { merge: true });
       bumpStats(tx, t.fromUid, "outCents", t.amountCents);
     }
     tx.update(toWalletRef, { balanceCents: toAfter, version: FieldValue.increment(1), updatedAt: now });
@@ -91,12 +119,13 @@ export async function executeTransfer(db: Firestore, t: TransferInput, hook?: Se
       status: "completed",
       note: t.note,
       idempotencyKey: t.idempotencyKey,
+      payloadHash,
       ...(t.reversalOf ? { reversalOf: t.reversalOf } : {}),
       createdAt: now,
     });
-    if (held) {
-      // The hold entry already debited the sender; relabel it so their history shows a normal send.
-      tx.update(db.doc(`ledger/${t.fromHoldEntryId}`), { type: "transfer_out", note: t.note, txId });
+
+    if (held && holdEntryRef) {
+      tx.update(holdEntryRef, { type: "transfer_out", note: t.note, txId });
     } else {
       tx.set(db.doc(`ledger/${txId}_out`), {
         txId, uid: t.fromUid, type: outType, amountCents: -t.amountCents,
@@ -116,7 +145,7 @@ export async function executeTransfer(db: Firestore, t: TransferInput, hook?: Se
   });
 }
 
-export const transfer = onCall(async (req) => {
+export const transfer = onCall(CALLABLE_OPTIONS, async (req) => {
   const input = parse(transferSchema, req.data);
   const { uid, user, limits } = await requireMoneyMover(req);
   const db = getFirestore();
@@ -124,33 +153,56 @@ export const transfer = onCall(async (req) => {
   if (input.amountCents > limits.perTransaction) {
     throw new HttpsError("resource-exhausted", "Amount exceeds per-transaction limit");
   }
-  const toEmail = input.toEmail.toLowerCase();
-  if (toEmail === user.email) throw new HttpsError("invalid-argument", "Cannot send to yourself");
+  const toEmail = input.toEmail.trim().toLowerCase();
+  const fromEmail = (user.email ?? "").trim().toLowerCase();
+  if (toEmail === fromEmail) throw new HttpsError("invalid-argument", "Cannot send to yourself");
 
   const recipients = await db.collection("users").where("email", "==", toEmail).limit(1).get();
   if (recipients.empty) throw new HttpsError("not-found", "Recipient not found");
-  const toUid = recipients.docs[0].id;
+  const recipientDoc = recipients.docs[0];
+  const recipientData = recipientDoc.data();
+  if (recipientData.emailVerified !== true && recipientData.kycStatus !== "verified") {
+    throw new HttpsError("failed-precondition", "Recipient email is not verified");
+  }
+  const toUid = recipientDoc.id;
 
+  const note = input.note ?? "";
+  const payloadHash = computePayloadHash(toUid, input.amountCents, note);
   const t: TransferInput = {
     fromUid: uid,
     toUid,
-    fromEmail: user.email,
+    fromEmail,
     toEmail,
     amountCents: input.amountCents,
-    note: input.note ?? "",
+    note,
     idempotencyKey: input.idempotencyKey,
     perDayLimit: limits.perDay,
+    payloadHash,
   };
   const id = `${uid}_${input.idempotencyKey}`;
+
   // A retried request must return the original outcome, not be re-scored by the risk rules.
   const [doneSnap, heldSnap] = await Promise.all([db.doc(`transfers/${id}`).get(), db.doc(`holds/${id}`).get()]);
-  if (doneSnap.exists) return { txId: id, status: "completed" };
-  if (heldSnap.exists && heldSnap.data()!.status === "held") return { txId: id, status: "held" };
+  if (doneSnap.exists) {
+    const data = doneSnap.data()!;
+    if (data.payloadHash && data.payloadHash !== payloadHash) {
+      throw new HttpsError("invalid-argument", "Idempotency key reused with different transfer parameters");
+    }
+    return { txId: id, status: "completed" };
+  }
+  if (heldSnap.exists && heldSnap.data()!.status === "held") {
+    const data = heldSnap.data()!;
+    if (data.payloadHash && data.payloadHash !== payloadHash) {
+      throw new HttpsError("invalid-argument", "Idempotency key reused with different transfer parameters");
+    }
+    return { txId: id, status: "held" };
+  }
 
   const risk = await evaluateTransferRisk(uid, user, toUid, input.amountCents);
   if (risk.action === "block") {
     await audit(uid, "transfer.blocked", { toUid, amountCents: input.amountCents, reasons: risk.reasons }, req.rawRequest.ip ?? "");
-    throw new HttpsError("permission-denied", `Payment blocked: ${risk.reasons[0]}`);
+    // Generic client error message; specific risk trigger reasons preserved in audit log only
+    throw new HttpsError("permission-denied", "Payment could not be completed for security reasons");
   }
   if (risk.action === "hold") {
     const h = await placeHold(t, risk.reasons);

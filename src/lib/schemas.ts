@@ -3,23 +3,35 @@ import { z } from "zod";
 // All money is integer cents. Max single transfer: $10,000.
 export const amountCentsSchema = z.number().int().positive().max(1_000_000);
 
+export const idempotencyKeySchema = z
+  .string()
+  .regex(/^[A-Za-z0-9_-]{16,64}$/, "Idempotency key must be 16-64 characters (alphanumeric, dash, underscore)");
+
+export const noteSchema = z
+  .string()
+  .max(200)
+  .transform((s) => s.replace(/[\x00-\x1F\x7F]/g, "").trim())
+  .default("");
+
+export const emailSchema = z.string().trim().toLowerCase().email();
+
 export const transferSchema = z.object({
-  toEmail: z.string().email(),
+  toEmail: emailSchema,
   amountCents: amountCentsSchema,
-  note: z.string().max(200).default(""),
-  idempotencyKey: z.string().uuid(),
+  note: noteSchema,
+  idempotencyKey: idempotencyKeySchema,
 });
 
 export const topupSchema = z.object({
   amountCents: z.number().int().min(100).max(500_000),
   method: z.enum(["card", "bank"]),
-  idempotencyKey: z.string().uuid(),
+  idempotencyKey: idempotencyKeySchema,
 });
 
 export const createRequestSchema = z.object({
-  payerEmail: z.string().email(),
+  payerEmail: emailSchema,
   amountCents: amountCentsSchema,
-  note: z.string().max(200).default(""),
+  note: noteSchema,
 });
 
 export const lineItemSchema = z.object({
@@ -29,23 +41,23 @@ export const lineItemSchema = z.object({
 });
 
 export const createInvoiceSchema = z.object({
-  recipientEmail: z.string().email(),
+  recipientEmail: emailSchema,
   lineItems: z.array(lineItemSchema).min(1).max(50),
   dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Pick a due date"),
-  memo: z.string().max(500).default(""),
+  memo: z.string().max(500).transform((s) => s.replace(/[\x00-\x1F\x7F]/g, "").trim()).default(""),
   send: z.boolean(),
 });
 
 export const createScheduleSchema = z.object({
-  toEmail: z.string().email(),
+  toEmail: emailSchema,
   amountCents: amountCentsSchema,
-  note: z.string().max(200).default(""),
+  note: noteSchema,
   frequency: z.enum(["weekly", "monthly"]),
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Pick a start date"),
 });
 
 export const contactSchema = z.object({
-  email: z.string().email().max(200),
+  email: emailSchema.max(200),
   name: z.string().max(100).default(""),
 });
 

@@ -3,6 +3,11 @@ import { HttpsError, CallableRequest } from "firebase-functions/v2/https";
 import { ZodSchema } from "zod";
 
 export const IS_EMULATOR = process.env.FUNCTIONS_EMULATOR === "true";
+export const CALLABLE_OPTIONS = {
+  region: "us-central1" as const,
+  maxInstances: 100,
+  enforceAppCheck: !IS_EMULATOR,
+};
 // DISABLE_MFA=true temporarily skips the TOTP requirement in emulator only.
 const DISABLE_MFA = IS_EMULATOR && process.env.DISABLE_MFA === "true";
 

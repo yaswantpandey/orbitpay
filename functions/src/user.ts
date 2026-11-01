@@ -20,6 +20,7 @@ export const bootstrapUser = onCall(async (req) => {
         email: (token.email ?? "").toLowerCase(),
         displayName: token.name ?? "",
         kycStatus: "none",
+        emailVerified: token.email_verified === true,
         mfaEnabled,
         displayCurrency: "USD",
         tier: 0,
@@ -32,8 +33,11 @@ export const bootstrapUser = onCall(async (req) => {
         version: 0,
         updatedAt: FieldValue.serverTimestamp(),
       });
-    } else if (mfaEnabled && !userSnap.data()!.mfaEnabled) {
-      tx.update(userRef, { mfaEnabled: true });
+    } else {
+      const updates: Record<string, unknown> = {};
+      if (mfaEnabled && !userSnap.data()!.mfaEnabled) updates.mfaEnabled = true;
+      if (token.email_verified === true && !userSnap.data()!.emailVerified) updates.emailVerified = true;
+      if (Object.keys(updates).length > 0) tx.update(userRef, updates);
     }
   });
   return { ok: true };

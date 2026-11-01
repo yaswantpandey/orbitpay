@@ -3,23 +3,35 @@ import { z } from "zod";
 // Keep in sync with src/lib/schemas.ts. All money is integer cents.
 export const amountCentsSchema = z.number().int().positive().max(1_000_000);
 
+export const idempotencyKeySchema = z
+  .string()
+  .regex(/^[A-Za-z0-9_-]{16,64}$/, "Idempotency key must be 16-64 characters (alphanumeric, dash, underscore)");
+
+export const noteSchema = z
+  .string()
+  .max(200)
+  .transform((s) => s.replace(/[\x00-\x1F\x7F]/g, "").trim())
+  .default("");
+
+export const emailSchema = z.string().trim().toLowerCase().email();
+
 export const transferSchema = z.object({
-  toEmail: z.string().email(),
+  toEmail: emailSchema,
   amountCents: amountCentsSchema,
-  note: z.string().max(200).default(""),
-  idempotencyKey: z.string().uuid(),
+  note: noteSchema,
+  idempotencyKey: idempotencyKeySchema,
 });
 
 export const topupSchema = z.object({
   amountCents: z.number().int().min(100).max(500_000),
   method: z.enum(["card", "bank"]),
-  idempotencyKey: z.string().uuid(),
+  idempotencyKey: idempotencyKeySchema,
 });
 
 export const createRequestSchema = z.object({
-  payerEmail: z.string().email(),
+  payerEmail: emailSchema,
   amountCents: amountCentsSchema,
-  note: z.string().max(200).default(""),
+  note: noteSchema,
 });
 
 export const respondRequestSchema = z.object({
@@ -34,10 +46,10 @@ export const lineItemSchema = z.object({
 });
 
 export const createInvoiceSchema = z.object({
-  recipientEmail: z.string().email(),
+  recipientEmail: emailSchema,
   lineItems: z.array(lineItemSchema).min(1).max(50),
   dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  memo: z.string().max(500).default(""),
+  memo: z.string().max(500).transform((s) => s.replace(/[\x00-\x1F\x7F]/g, "").trim()).default(""),
   send: z.boolean(),
 });
 
@@ -51,7 +63,7 @@ export const invoiceTotal = (items: z.infer<typeof lineItemSchema>[]) =>
 
 export const payoutSchema = z.object({
   amountCents: z.number().int().min(100).max(1_000_000),
-  idempotencyKey: z.string().uuid(),
+  idempotencyKey: idempotencyKeySchema,
 });
 
 export const devSettlePayoutSchema = z.object({
@@ -60,9 +72,9 @@ export const devSettlePayoutSchema = z.object({
 });
 
 export const createScheduleSchema = z.object({
-  toEmail: z.string().email(),
+  toEmail: emailSchema,
   amountCents: amountCentsSchema,
-  note: z.string().max(200).default(""),
+  note: noteSchema,
   frequency: z.enum(["weekly", "monthly"]),
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
 });
@@ -76,7 +88,7 @@ export const createSplitSchema = z.object({
   title: z.string().min(1).max(100),
   totalCents: amountCentsSchema,
   // Shares are explicit so the server never has to guess how to distribute remainder cents.
-  shares: z.array(z.object({ email: z.string().email(), amountCents: amountCentsSchema })).min(1).max(20),
+  shares: z.array(z.object({ email: emailSchema, amountCents: amountCentsSchema })).min(1).max(20),
 });
 
 export const adminUserActionSchema = z.object({
@@ -110,7 +122,7 @@ export const convertSchema = z.object({
   to: currencySchema,
   // Minor units of the source currency (JPY has none, so "cents" are whole yen there).
   amountMinor: z.number().int().positive().max(100_000_000),
-  idempotencyKey: z.string().uuid(),
+  idempotencyKey: idempotencyKeySchema,
   // Rate the user saw; the server refuses if the live rate moved against them by more than 1%.
   quotedRate: z.number().positive(),
 });
@@ -124,7 +136,7 @@ export const potMoveSchema = z.object({
   potId: z.string().min(1).max(200),
   direction: z.enum(["in", "out"]),
   amountCents: amountCentsSchema,
-  idempotencyKey: z.string().uuid(),
+  idempotencyKey: idempotencyKeySchema,
 });
 
 export const potIdSchema = z.object({ potId: z.string().min(1).max(200) });
