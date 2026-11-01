@@ -22,3 +22,4 @@ export {
   deliverWebhookOnCreate, retryWebhooksTick, devRetryWebhooks,
 } from "./merchant";
 export { adminDecideHold, adminListHolds } from "./risk";
+export { reconciliationDailyTick, runReconciliation } from "./reconciliation";

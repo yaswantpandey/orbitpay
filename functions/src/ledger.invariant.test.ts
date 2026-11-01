@@ -255,5 +255,76 @@ describe("Ledger Integrity & Mathematical Invariants (Task E.2)", () => {
     expect(revOutSnap.data()?.type).toBe("refund");
     expect(revInSnap.data()?.type).toBe("refund");
   });
+
+  it("proves mathematical invariants hold across a seeded pseudo-random sequence of 50 operations", async () => {
+    const SEED = 4242;
+    // Mulberry32 seeded PRNG
+    let s = SEED >>> 0;
+    const rng = () => {
+      s = (s + 0x6d2b79f5) >>> 0;
+      let t = Math.imul(s ^ (s >>> 15), 1 | s);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+
+    const initial = { u1: 20_000, u2: 20_000, u3: 20_000 };
+    await seedWallets(initial);
+
+    const userKeys = Object.keys(initial);
+    const priorKeys: string[] = [];
+
+    // Track ledger snapshot IDs to verify append-only invariant
+    const initialLedgerSnap = await db.collection("ledger").get();
+    const ledgerIdSet = new Set(initialLedgerSnap.docs.map((d) => d.id));
+
+    try {
+      for (let i = 0; i < 50; i++) {
+        const uFrom = userKeys[Math.floor(rng() * userKeys.length)];
+        let uTo = userKeys[Math.floor(rng() * userKeys.length)];
+        while (uTo === uFrom) {
+          uTo = userKeys[Math.floor(rng() * userKeys.length)];
+        }
+
+        const mode = rng();
+        if (mode < 0.6) {
+          // Standard transfer between $1.00 and $50.00
+          const amount = Math.floor(rng() * 4_900) + 100;
+          const key = `seeded_${i}_${randomUUID().slice(0, 8)}`;
+          priorKeys.push(key);
+          await executeTransfer(db, {
+            fromUid: uFrom, toUid: uTo, fromEmail: `${uFrom}@example.com`, toEmail: `${uTo}@example.com`,
+            amountCents: amount, note: `Seeded op ${i}`, idempotencyKey: key, perDayLimit: 1_000_000,
+          }).catch(() => null); // May fail if balance insufficient
+        } else if (mode < 0.8) {
+          // Intentional overdraw attempt
+          const amount = 50_000; // Exceeds balance
+          const key = `overdraw_${i}_${randomUUID().slice(0, 8)}`;
+          await executeTransfer(db, {
+            fromUid: uFrom, toUid: uTo, fromEmail: `${uFrom}@example.com`, toEmail: `${uTo}@example.com`,
+            amountCents: amount, note: "Overdraw test", idempotencyKey: key, perDayLimit: 1_000_000,
+          }).catch(() => null);
+        } else if (priorKeys.length > 0) {
+          // Idempotent replay of an earlier key
+          const replayedKey = priorKeys[Math.floor(rng() * priorKeys.length)];
+          await executeTransfer(db, {
+            fromUid: uFrom, toUid: uTo, fromEmail: `${uFrom}@example.com`, toEmail: `${uTo}@example.com`,
+            amountCents: 1_000, note: "Replay", idempotencyKey: replayedKey, perDayLimit: 1_000_000,
+          }).catch(() => null);
+        }
+      }
+
+      // Assert all mathematical invariants hold
+      await verifyLedgerInvariants(db, initial);
+
+      // Verify append-only invariant: every entry that was in ledgerIdSet is still present
+      const finalLedgerSnap = await db.collection("ledger").get();
+      for (const id of ledgerIdSet) {
+        expect(finalLedgerSnap.docs.some((d) => d.id === id)).toBe(true);
+      }
+    } catch (err) {
+      console.error(`INVARIANT FAILURE on SEED ${SEED}:`, err);
+      throw err;
+    }
+  });
 });
 
