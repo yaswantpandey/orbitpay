@@ -69,6 +69,17 @@ describe("payouts", () => {
     expect(await bal("alice")).toBe(9_000);
     expect((await db.doc("system/totals").get()).data()!.paidOutCents).toBe(1_000);
   });
+
+  it("enforces daily limits on payouts", async () => {
+    await holdFunds("alice", "p_dl1", 4_000, "acct", 5_000);
+    expect(await bal("alice")).toBe(6_000);
+
+    await expect(holdFunds("alice", "p_dl2", 2_000, "acct", 5_000)).rejects.toThrow(/Daily limit/);
+    expect(await bal("alice")).toBe(6_000);
+
+    await holdFunds("alice", "p_dl3", 1_000, "acct", 5_000);
+    expect(await bal("alice")).toBe(5_000);
+  });
 });
 
 describe("recurring schedules", () => {

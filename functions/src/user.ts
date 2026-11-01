@@ -1,10 +1,10 @@
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { onDocumentCreated, onDocumentDeleted } from "firebase-functions/v2/firestore";
-import { requireAuth, audit, IS_EMULATOR } from "./middleware";
+import { requireAuth, audit, IS_EMULATOR, CALLABLE_OPTIONS } from "./middleware";
 
 /** Creates the user profile and empty wallet on first sign-in. Idempotent. */
-export const bootstrapUser = onCall(async (req) => {
+export const bootstrapUser = onCall(CALLABLE_OPTIONS, async (req) => {
   const uid = requireAuth(req);
   const db = getFirestore();
   const token = req.auth!.token;
@@ -47,7 +47,7 @@ export const bootstrapUser = onCall(async (req) => {
  * DEV ONLY: marks the caller as KYC-verified (tier 1) in the emulator.
  * Real KYC provider integration is Phase 5.
  */
-export const devVerifyKyc = onCall(async (req) => {
+export const devVerifyKyc = onCall(CALLABLE_OPTIONS, async (req) => {
   if (!IS_EMULATOR) throw new HttpsError("permission-denied", "Not available");
   const uid = requireAuth(req);
   await getFirestore().doc(`users/${uid}`).update({ kycStatus: "verified", tier: 1 });

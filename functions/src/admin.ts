@@ -2,11 +2,11 @@ import { getAuth } from "firebase-admin/auth";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { adminUserActionSchema, adminReverseSchema, adminSearchSchema } from "./schemas";
-import { parse, requireAdmin, audit } from "./middleware";
+import { parse, requireAdmin, audit, CALLABLE_OPTIONS } from "./middleware";
 import { executeTransfer } from "./transfer";
 
 /** Look up users by email prefix (or the most recent 25), with wallet balances. */
-export const adminSearchUsers = onCall(async (req) => {
+export const adminSearchUsers = onCall(CALLABLE_OPTIONS, async (req) => {
   requireAdmin(req);
   const email = (parse(adminSearchSchema, req.data).email ?? "").trim().toLowerCase();
   const db = getFirestore();
@@ -27,7 +27,7 @@ export const adminSearchUsers = onCall(async (req) => {
   };
 });
 
-export const adminUserAction = onCall(async (req) => {
+export const adminUserAction = onCall(CALLABLE_OPTIONS, async (req) => {
   const adminUid = requireAdmin(req);
   const { uid, action, reason } = parse(adminUserActionSchema, req.data);
   if (uid === adminUid) throw new HttpsError("invalid-argument", "You can't freeze your own account");
@@ -46,7 +46,7 @@ export const adminUserAction = onCall(async (req) => {
  * Reverse a completed P2P transfer with a compensating transfer (recipient -> sender).
  * Refuses if the recipient no longer has the funds; never drives a balance negative.
  */
-export const adminReverseTransfer = onCall(async (req) => {
+export const adminReverseTransfer = onCall(CALLABLE_OPTIONS, async (req) => {
   const adminUid = requireAdmin(req);
   const { txId, reason } = parse(adminReverseSchema, req.data);
   const db = getFirestore();
@@ -80,7 +80,7 @@ export const adminReverseTransfer = onCall(async (req) => {
   return { reversalTxId: result.txId };
 });
 
-export const adminAuditLog = onCall(async (req) => {
+export const adminAuditLog = onCall(CALLABLE_OPTIONS, async (req) => {
   requireAdmin(req);
   const uid = typeof req.data?.uid === "string" ? req.data.uid.slice(0, 128) : "";
   const db = getFirestore();
@@ -97,7 +97,7 @@ export const adminAuditLog = onCall(async (req) => {
 });
 
 /** Recent transfers for one user, so an admin can pick one to reverse. */
-export const adminUserTransfers = onCall(async (req) => {
+export const adminUserTransfers = onCall(CALLABLE_OPTIONS, async (req) => {
   requireAdmin(req);
   const uid = typeof req.data?.uid === "string" ? req.data.uid.slice(0, 128) : "";
   if (!uid) throw new HttpsError("invalid-argument", "uid required");

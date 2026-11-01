@@ -1,4 +1,5 @@
 import { createHash, createHmac, randomBytes } from "crypto";
+import dns from "dns/promises";
 import { getFirestore, FieldValue, Timestamp } from "firebase-admin/firestore";
 import { onCall, onRequest, HttpsError } from "firebase-functions/v2/https";
 import { onDocumentCreated } from "firebase-functions/v2/firestore";
@@ -7,7 +8,7 @@ import { logger } from "firebase-functions";
 import {
   merchantProfileSchema, createCheckoutSchema, checkoutIdSchema, apiKeyActionSchema,
 } from "./schemas";
-import { parse, requireAuth, requireMoneyMover, audit, IS_EMULATOR } from "./middleware";
+import { parse, requireAuth, requireMoneyMover, audit, IS_EMULATOR, CALLABLE_OPTIONS } from "./middleware";
 import { executeTransfer } from "./transfer";
 
 const APP_URL = process.env.APP_URL ?? "http://localhost:3001";
@@ -74,9 +75,30 @@ export function checkWebhookUrl(url: string) {
   }
 }
 
+export async function isSafePublicUrl(rawUrl: string): Promise<boolean> {
+  let u: URL;
+  try {
+    u = new URL(rawUrl);
+  } catch {
+    return false;
+  }
+  if (IS_EMULATOR) return true;
+  if (u.protocol !== "https:") return false;
+  if (isPrivateOrReservedHost(u.hostname)) return false;
+  try {
+    const addresses = await dns.lookup(u.hostname, { all: true });
+    for (const addr of addresses) {
+      if (isPrivateOrReservedHost(addr.address)) return false;
+    }
+  } catch {
+    return false;
+  }
+  return true;
+}
+
 // ---------- Merchant profile & API keys (callable, signed-in owner) ----------
 
-export const setMerchantProfile = onCall(async (req) => {
+export const setMerchantProfile = onCall(CALLABLE_OPTIONS, async (req) => {
   const input = parse(merchantProfileSchema, req.data);
   const { uid, user } = await requireMoneyMover(req);
   checkWebhookUrl(input.webhookUrl);
@@ -107,7 +129,7 @@ export const setMerchantProfile = onCall(async (req) => {
   return { ok: true, ...(newSecret ? { webhookSecret: newSecret } : {}) };
 });
 
-export const rotateWebhookSecret = onCall(async (req) => {
+export const rotateWebhookSecret = onCall(CALLABLE_OPTIONS, async (req) => {
   const uid = requireAuth(req);
   const db = getFirestore();
   const merchantSnap = await db.doc(`merchants/${uid}`).get();
@@ -124,7 +146,7 @@ export const rotateWebhookSecret = onCall(async (req) => {
 });
 
 /** Returns the plaintext key exactly once; only its SHA-256 is stored. */
-export const createApiKey = onCall(async (req) => {
+export const createApiKey = onCall(CALLABLE_OPTIONS, async (req) => {
   const uid = requireAuth(req);
   const db = getFirestore();
   if (!(await db.doc(`merchants/${uid}`).get()).exists) throw new HttpsError("failed-precondition", "Set up your merchant profile first");
@@ -137,7 +159,7 @@ export const createApiKey = onCall(async (req) => {
   return { key, keyId: hash, prefix: key.slice(0, 12) };
 });
 
-export const revokeApiKey = onCall(async (req) => {
+export const revokeApiKey = onCall(CALLABLE_OPTIONS, async (req) => {
   const uid = requireAuth(req);
   const { keyId } = parse(apiKeyActionSchema, req.data);
   const ref = getFirestore().doc(`apiKeys/${keyId}`);
@@ -182,14 +204,14 @@ function serializeCheckout(id: string, c: FirebaseFirestore.DocumentData) {
 }
 
 /** Merchant creates a checkout from the dashboard (same as the API, but authenticated by session). */
-export const createCheckout = onCall(async (req) => {
+export const createCheckout = onCall(CALLABLE_OPTIONS, async (req) => {
   const input = parse(createCheckoutSchema, req.data);
   const uid = requireAuth(req);
   return createCheckoutDoc(uid, input);
 });
 
 /** Public view of a checkout for the hosted payment page (signed-in payers). */
-export const getCheckout = onCall(async (req) => {
+export const getCheckout = onCall(CALLABLE_OPTIONS, async (req) => {
   requireAuth(req);
   const { checkoutId } = parse(checkoutIdSchema, req.data);
   const c = (await getFirestore().doc(`checkouts/${checkoutId}`).get()).data();
@@ -199,7 +221,7 @@ export const getCheckout = onCall(async (req) => {
     businessName: c.businessName, successUrl: c.successUrl, expiresAt: s.expires_at };
 });
 
-export const payCheckout = onCall(async (req) => {
+export const payCheckout = onCall(CALLABLE_OPTIONS, async (req) => {
   const { checkoutId } = parse(checkoutIdSchema, req.data);
   const { uid, user, limits } = await requireMoneyMover(req);
   const db = getFirestore();
@@ -234,6 +256,27 @@ export const payCheckout = onCall(async (req) => {
 
 // ---------- Public REST API ----------
 
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX = 60;
+const rateLimits = new Map<string, { count: number; resetAt: number }>();
+
+function checkRateLimit(key: string): boolean {
+  const now = Date.now();
+  const entry = rateLimits.get(key);
+  if (!entry || now > entry.resetAt) {
+    rateLimits.set(key, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+    if (rateLimits.size > 10_000) {
+      for (const [k, v] of rateLimits) {
+        if (now > v.resetAt) rateLimits.delete(k);
+      }
+    }
+    return true;
+  }
+  if (entry.count >= RATE_LIMIT_MAX) return false;
+  entry.count++;
+  return true;
+}
+
 async function authenticateKey(header: string | undefined) {
   const key = header?.match(/^Bearer\s+(fp_(?:test|live)_[A-Za-z0-9_-]{20,})$/)?.[1];
   if (!key) return null;
@@ -247,8 +290,11 @@ async function authenticateKey(header: string | undefined) {
 /** POST /v1/checkouts, GET /v1/checkouts/:id. Authenticated with `Authorization: Bearer fp_..._...`. */
 export const api = onRequest(async (req, res) => {
   const fail = (status: number, message: string) => res.status(status).json({ error: { message } });
+  const clientIp = req.ip || String(req.headers["x-forwarded-for"] ?? "unknown");
+  if (!checkRateLimit(`ip_${clientIp}`)) return void fail(429, "Too many requests. Please slow down.");
   const merchantUid = await authenticateKey(req.headers.authorization);
   if (!merchantUid) return void fail(401, "Invalid or revoked API key");
+  if (!checkRateLimit(`key_${merchantUid}`)) return void fail(429, "Too many requests for this API key. Limit is 60 req/min.");
   const path = req.path.replace(/\/+$/, "");
   try {
     if (req.method === "POST" && path === "/v1/checkouts") {
@@ -307,14 +353,24 @@ export async function attemptDelivery(id: string) {
   const secret = secretDoc.data()?.webhookSecret ?? merchant.data()?.webhookSecret ?? "";
   const body = JSON.stringify({ id, type: d.type, created: Math.floor(Date.now() / 1000),
     data: serializeCheckout(d.checkoutId, checkout.data()!) });
+  if (!(await isSafePublicUrl(d.url))) {
+    await ref.update({ status: "failed", attempts: (d.attempts as number) + 1, lastError: "SSRF: Blocked internal or unresolvable destination" });
+    return "failed";
+  }
+  if (!secret) {
+    await ref.update({ status: "failed", attempts: (d.attempts as number) + 1, lastError: "Missing webhook secret" });
+    return "failed";
+  }
+  const timestamp = Math.floor(Date.now() / 1000);
+  const signature = signPayload(secret, body, timestamp);
   let ok = false, status = 0, error = "";
   try {
     const r = await fetch(d.url, {
       method: "POST", redirect: "manual", signal: AbortSignal.timeout(10_000),
       headers: {
         "content-type": "application/json",
-        "orbitpay-signature": signPayload(secret, body),
-        "fastpay-signature": signPayload(secret, body),
+        "orbitpay-signature": signature,
+        "fastpay-signature": signature,
       },
       body,
     });
@@ -349,7 +405,7 @@ export const retryWebhooksTick = onSchedule("every 5 minutes", async () => {
 });
 
 /** DEV ONLY: retry pending deliveries now, ignoring backoff. */
-export const devRetryWebhooks = onCall(async (req) => {
+export const devRetryWebhooks = onCall(CALLABLE_OPTIONS, async (req) => {
   if (!IS_EMULATOR) throw new HttpsError("permission-denied", "Not available");
   const uid = requireAuth(req);
   const pending = await getFirestore().collection("webhookDeliveries")

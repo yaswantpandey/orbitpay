@@ -2,7 +2,7 @@ import { getFirestore, Timestamp } from "firebase-admin/firestore";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { logger } from "firebase-functions";
-import { requireAuth, IS_EMULATOR } from "./middleware";
+import { requireAuth, IS_EMULATOR, CALLABLE_OPTIONS } from "./middleware";
 
 // Keep in sync with CURRENCIES in src/lib/format.ts. Rates are display-only; the ledger is USD.
 const CURRENCIES = ["EUR", "GBP", "INR", "JPY", "CAD", "AUD"];
@@ -34,7 +34,7 @@ export const fetchFxRates = onSchedule("every 60 minutes", async () => {
 });
 
 /** DEV ONLY: scheduled functions don't fire in the emulator, so refresh on demand. */
-export const devRefreshFx = onCall(async (req) => {
+export const devRefreshFx = onCall(CALLABLE_OPTIONS, async (req) => {
   if (!IS_EMULATOR) throw new HttpsError("permission-denied", "Not available");
   requireAuth(req);
   return { rates: await refreshRates() };

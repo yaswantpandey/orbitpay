@@ -1,12 +1,12 @@
 import { getFirestore, FieldValue, Timestamp } from "firebase-admin/firestore";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { createRequestSchema, respondRequestSchema } from "./schemas";
-import { parse, requireAuth, requireMoneyMover, audit } from "./middleware";
+import { parse, requireAuth, requireMoneyMover, audit, CALLABLE_OPTIONS } from "./middleware";
 import { executeTransfer } from "./transfer";
 
 export const REQUEST_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
-export const createRequest = onCall(async (req) => {
+export const createRequest = onCall(CALLABLE_OPTIONS, async (req) => {
   const input = parse(createRequestSchema, req.data);
   const { uid, user, limits } = await requireMoneyMover(req);
   const db = getFirestore();
@@ -43,7 +43,7 @@ export const createRequest = onCall(async (req) => {
   return { requestId: ref.id };
 });
 
-export const respondRequest = onCall(async (req) => {
+export const respondRequest = onCall(CALLABLE_OPTIONS, async (req) => {
   const { requestId, action } = parse(respondRequestSchema, req.data);
   const db = getFirestore();
   const ref = db.doc(`paymentRequests/${requestId}`);

@@ -9,7 +9,7 @@ import { randomUUID } from "crypto";
 import { movePot } from "./pots";
 import { placeHold, decideHold } from "./risk";
 import { convertMinor, crossRate, SPREAD } from "./currencies";
-import { signPayload } from "./merchant";
+import { signPayload, isSafePublicUrl, checkWebhookUrl } from "./merchant";
 import { createHmac } from "crypto";
 import type { TransferInput } from "./transfer";
 
@@ -140,5 +140,22 @@ describe("webhook signatures", () => {
     const sig = signPayload("whsec_test", '{"a":1}', 1700000000);
     const expected = createHmac("sha256", "whsec_test").update('1700000000.{"a":1}').digest("hex");
     expect(sig).toBe(`t=1700000000,v1=${expected}`);
+  });
+});
+
+describe("webhook SSRF protection", () => {
+  it("rejects non-https URLs and private/internal hosts", async () => {
+    expect(await isSafePublicUrl("http://evil.com/webhook")).toBe(false);
+    expect(await isSafePublicUrl("https://localhost/webhook")).toBe(false);
+    expect(await isSafePublicUrl("https://127.0.0.1/webhook")).toBe(false);
+    expect(await isSafePublicUrl("https://10.0.0.1/webhook")).toBe(false);
+    expect(await isSafePublicUrl("https://192.168.1.1/webhook")).toBe(false);
+    expect(await isSafePublicUrl("https://169.254.169.254/webhook")).toBe(false);
+    expect(await isSafePublicUrl("https://metadata.google.internal/computeMetadata")).toBe(false);
+  });
+
+  it("checkWebhookUrl validates format", () => {
+    expect(() => checkWebhookUrl("invalid-url")).toThrow(/Invalid webhook URL format/);
+    expect(() => checkWebhookUrl("")).not.toThrow();
   });
 });

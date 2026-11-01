@@ -12,6 +12,7 @@ const DEV_EMAIL = IS_EMULATOR;
 export interface Mail { to: string; subject: string; text: string; link?: string }
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
+const stripCrlf = (s: string) => s.replace(/[\r\n\t]/g, " ").trim();
 const usd = (c: number) => `$${(c / 100).toFixed(2)}`;
 
 /**
@@ -22,7 +23,7 @@ export function queueMail(
   w: FirebaseFirestore.Transaction | FirebaseFirestore.WriteBatch, id: string, mail: Mail
 ) {
   (w as FirebaseFirestore.WriteBatch).set(getFirestore().doc(`mailOutbox/${id}`), {
-    ...mail, status: "queued", createdAt: FieldValue.serverTimestamp(),
+    ...mail, subject: stripCrlf(mail.subject), status: "queued", createdAt: FieldValue.serverTimestamp(),
   });
 }
 
@@ -37,7 +38,7 @@ export const emailOnNotification = onDocumentCreated("notifications/{id}", async
   if (!mail) return;
   // create() fails if this notification was already emailed (trigger redelivery).
   await db.doc(`mailOutbox/notif_${event.params.id}`)
-    .create({ ...mail, to: user.email, status: "queued", createdAt: FieldValue.serverTimestamp() })
+    .create({ ...mail, subject: stripCrlf(mail.subject), to: user.email, status: "queued", createdAt: FieldValue.serverTimestamp() })
     .catch((e) => { if (e.code !== 6) throw e; }); // 6 = ALREADY_EXISTS
 });
 

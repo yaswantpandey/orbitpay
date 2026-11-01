@@ -3,7 +3,7 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { logger } from "firebase-functions";
 import Stripe from "stripe";
 import { payoutSchema, devSettlePayoutSchema } from "./schemas";
-import { parse, requireAuth, requireMoneyMover, audit, bumpStats, IS_EMULATOR } from "./middleware";
+import { parse, requireAuth, requireMoneyMover, audit, bumpStats, IS_EMULATOR, CALLABLE_OPTIONS, dayKey } from "./middleware";
 import { STRIPE_SECRET_KEY } from "./topup";
 
 const DEV_PAYOUTS = IS_EMULATOR;
@@ -12,7 +12,7 @@ const APP_URL = process.env.APP_URL ?? "http://localhost:3001";
 const stripeClient = () => new Stripe(STRIPE_SECRET_KEY.value());
 
 /** Returns a Stripe-hosted onboarding link where the user links their bank account. */
-export const createPayoutAccountLink = onCall({ secrets: [STRIPE_SECRET_KEY] }, async (req) => {
+export const createPayoutAccountLink = onCall({ ...CALLABLE_OPTIONS, secrets: [STRIPE_SECRET_KEY] }, async (req) => {
   const { uid, user } = await requireMoneyMover(req);
   if (DEV_PAYOUTS) {
     await getFirestore().doc(`users/${uid}`).update({ payoutAccountId: "dev_account", payoutsEnabled: true });
@@ -37,7 +37,7 @@ export const createPayoutAccountLink = onCall({ secrets: [STRIPE_SECRET_KEY] }, 
   return { url: link.url, dev: false };
 });
 
-export const requestPayout = onCall({ secrets: [STRIPE_SECRET_KEY] }, async (req) => {
+export const requestPayout = onCall({ ...CALLABLE_OPTIONS, secrets: [STRIPE_SECRET_KEY] }, async (req) => {
   const input = parse(payoutSchema, req.data);
   const { uid, user, limits } = await requireMoneyMover(req);
   if (input.amountCents > limits.perTransaction) {
@@ -52,7 +52,7 @@ export const requestPayout = onCall({ secrets: [STRIPE_SECRET_KEY] }, async (req
   }
 
   const payoutId = `${uid}_${input.idempotencyKey}`;
-  const { replayed } = await holdFunds(uid, payoutId, input.amountCents, user.payoutAccountId);
+  const { replayed } = await holdFunds(uid, payoutId, input.amountCents, user.payoutAccountId, limits.perDay);
   if (replayed) return { payoutId, status: (await getFirestore().doc(`payouts/${payoutId}`).get()).data()!.status };
   await audit(uid, "payout.requested", { payoutId, amountCents: input.amountCents });
 
@@ -72,18 +72,32 @@ export const requestPayout = onCall({ secrets: [STRIPE_SECRET_KEY] }, async (req
 });
 
 /** Debit the wallet up front so the money can't be spent twice while the payout is in flight. */
-export async function holdFunds(uid: string, payoutId: string, amountCents: number, accountId: string) {
+export async function holdFunds(uid: string, payoutId: string, amountCents: number, accountId: string, perDayLimit = 1_000_000) {
   const db = getFirestore();
   const payoutRef = db.doc(`payouts/${payoutId}`);
   const walletRef = db.doc(`wallets/${uid}`);
+  const dailyRef = db.doc(`dailyTotals/${uid}_${dayKey()}`);
   return db.runTransaction(async (tx) => {
-    if ((await tx.get(payoutRef)).exists) return { replayed: true };
-    const wallet = await tx.get(walletRef);
-    const bal = wallet.data()?.balanceCents as number;
+    const [payoutSnap, walletSnap, dailySnap] = await Promise.all([
+      tx.get(payoutRef),
+      tx.get(walletRef),
+      tx.get(dailyRef),
+    ]);
+    if (payoutSnap.exists) return { replayed: true };
+
+    const bal = walletSnap.data()?.balanceCents;
+    if (typeof bal !== "number" || Number.isNaN(bal)) {
+      throw new HttpsError("internal", "Corrupt wallet balance state");
+    }
     if (bal < amountCents) throw new HttpsError("failed-precondition", "Insufficient funds");
+    const sentToday = dailySnap.exists ? (dailySnap.data()?.sentCents as number) ?? 0 : 0;
+    if (sentToday + amountCents > perDayLimit) {
+      throw new HttpsError("resource-exhausted", "Daily limit exceeded");
+    }
     const now = FieldValue.serverTimestamp();
     const after = bal - amountCents;
     tx.update(walletRef, { balanceCents: after, version: FieldValue.increment(1), updatedAt: now });
+    tx.set(dailyRef, { sentCents: FieldValue.increment(amountCents) }, { merge: true });
     tx.set(payoutRef, { uid, amountCents, accountId, status: "pending", createdAt: now });
     tx.set(db.doc(`ledger/${payoutId}_payout`), {
       txId: payoutId, uid, type: "payout", amountCents: -amountCents, balanceAfterCents: after,
@@ -113,9 +127,16 @@ export async function failPayout(payoutId: string, reason: string) {
     const p = (await tx.get(ref)).data();
     if (!p || p.status !== "pending") return;
     const walletRef = db.doc(`wallets/${p.uid}`);
-    const after = ((await tx.get(walletRef)).data()!.balanceCents as number) + p.amountCents;
+    const dailyRef = db.doc(`dailyTotals/${p.uid}_${dayKey()}`);
+    const walletSnap = await tx.get(walletRef);
+    const bal = walletSnap.data()?.balanceCents;
+    if (typeof bal !== "number" || Number.isNaN(bal)) {
+      throw new HttpsError("internal", "Corrupt wallet balance state");
+    }
+    const after = bal + p.amountCents;
     const now = FieldValue.serverTimestamp();
     tx.update(walletRef, { balanceCents: after, version: FieldValue.increment(1), updatedAt: now });
+    tx.set(dailyRef, { sentCents: FieldValue.increment(-p.amountCents) }, { merge: true });
     tx.update(ref, { status: "failed", failureReason: reason, failedAt: now });
     tx.set(db.doc(`ledger/${payoutId}_reversal`), {
       txId: payoutId, uid: p.uid, type: "refund", amountCents: p.amountCents, balanceAfterCents: after,
@@ -126,7 +147,7 @@ export async function failPayout(payoutId: string, reason: string) {
 }
 
 /** DEV ONLY: settle a pending payout as the bank would. */
-export const devSettlePayout = onCall(async (req) => {
+export const devSettlePayout = onCall(CALLABLE_OPTIONS, async (req) => {
   if (!DEV_PAYOUTS) throw new HttpsError("permission-denied", "Not available");
   const uid = requireAuth(req);
   const { payoutId, outcome } = parse(devSettlePayoutSchema, req.data);

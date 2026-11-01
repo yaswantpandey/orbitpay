@@ -1,14 +1,14 @@
 import { getFirestore, FieldValue, Timestamp } from "firebase-admin/firestore";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { createSplitSchema } from "./schemas";
-import { parse, requireMoneyMover, audit } from "./middleware";
+import { parse, requireMoneyMover, audit, CALLABLE_OPTIONS } from "./middleware";
 import { REQUEST_TTL_MS } from "./requests";
 
 /**
  * Split a bill: one payment request per participant, tagged with a shared splitId.
  * Payment goes through the normal respondRequest flow; progress is derived from those requests.
  */
-export const createSplit = onCall(async (req) => {
+export const createSplit = onCall(CALLABLE_OPTIONS, async (req) => {
   const input = parse(createSplitSchema, req.data);
   const { uid, user, limits } = await requireMoneyMover(req);
   const db = getFirestore();

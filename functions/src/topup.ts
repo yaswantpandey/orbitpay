@@ -4,7 +4,7 @@ import { defineSecret } from "firebase-functions/params";
 import { logger } from "firebase-functions";
 import Stripe from "stripe";
 import { topupSchema } from "./schemas";
-import { parse, requireMoneyMover, audit, bumpStats } from "./middleware";
+import { parse, requireMoneyMover, audit, bumpStats, CALLABLE_OPTIONS } from "./middleware";
 
 export const STRIPE_SECRET_KEY = defineSecret("STRIPE_SECRET_KEY");
 export const STRIPE_WEBHOOK_SECRET = defineSecret("STRIPE_WEBHOOK_SECRET");
@@ -12,9 +12,12 @@ export const STRIPE_WEBHOOK_SECRET = defineSecret("STRIPE_WEBHOOK_SECRET");
 const stripeClient = () => new Stripe(STRIPE_SECRET_KEY.value());
 
 /** Creates a pending top-up and a Stripe PaymentIntent. Never credits the wallet. */
-export const createTopup = onCall({ secrets: [STRIPE_SECRET_KEY] }, async (req) => {
+export const createTopup = onCall({ ...CALLABLE_OPTIONS, secrets: [STRIPE_SECRET_KEY] }, async (req) => {
   const input = parse(topupSchema, req.data);
-  const { uid } = await requireMoneyMover(req);
+  const { uid, limits } = await requireMoneyMover(req);
+  if (input.amountCents > limits.perTransaction) {
+    throw new HttpsError("resource-exhausted", "Amount exceeds per-transaction limit");
+  }
   const db = getFirestore();
   const topupId = `${uid}_${input.idempotencyKey}`;
   const ref = db.doc(`topups/${topupId}`);
@@ -65,11 +68,59 @@ export const stripeWebhook = onRequest(
     }
 
     const db = getFirestore();
+    const eventRef = db.doc(`stripeEvents/${event.id}`);
+    const alreadyProcessed = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(eventRef);
+      if (snap.exists && snap.data()?.status === "completed") return true;
+      tx.set(eventRef, { type: event.type, status: "processing", updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      return false;
+    });
+    if (alreadyProcessed) {
+      res.status(200).send("duplicate");
+      return;
+    }
+
+    if (event.type.startsWith("charge.dispute.")) {
+      const dispute = event.data.object as Stripe.Dispute;
+      const piId = typeof dispute.payment_intent === "string" ? dispute.payment_intent : dispute.charge;
+      if (piId) {
+        const topupQuery = await db.collection("topups").where("stripePaymentIntentId", "==", piId).limit(1).get();
+        if (!topupQuery.empty) {
+          const topupDoc = topupQuery.docs[0];
+          const topup = topupDoc.data();
+          await topupDoc.ref.update({
+            disputed: event.type === "charge.dispute.created",
+            disputeStatus: dispute.status,
+            disputeReason: dispute.reason ?? null,
+            updatedAt: FieldValue.serverTimestamp(),
+          });
+          await audit(topup.uid, "topup.dispute", {
+            disputeId: dispute.id,
+            status: dispute.status,
+            reason: dispute.reason,
+            topupId: topupDoc.id,
+          });
+          await db.doc(`notifications/dispute_${dispute.id}`).set({
+            uid: topup.uid,
+            kind: "hold",
+            amountCents: dispute.amount,
+            fromEmail: "OrbitPay Security",
+            note: `Payment dispute opened: ${dispute.reason || "Under review"}`,
+            read: false,
+            createdAt: FieldValue.serverTimestamp(),
+          });
+        }
+      }
+      await eventRef.update({ status: "completed", completedAt: FieldValue.serverTimestamp() });
+    res.status(200).send("ok");
+      return;
+    }
     if (event.type.startsWith("identity.verification_session.")) {
       // Lazy import avoids a circular module dependency (kyc.ts imports STRIPE_SECRET_KEY from here).
       const { handleIdentityEvent } = await import("./kyc");
       await handleIdentityEvent(event);
-      res.status(200).send("ok");
+      await eventRef.update({ status: "completed", completedAt: FieldValue.serverTimestamp() });
+    res.status(200).send("ok");
       return;
     }
     const pi = event.data.object as Stripe.PaymentIntent;
@@ -109,6 +160,7 @@ export const stripeWebhook = onRequest(
     } else if (event.type === "payment_intent.payment_failed" || event.type === "payment_intent.canceled") {
       await setStatusUnlessDone(topupRef, "failed", pi.last_payment_error?.message ?? event.type);
     }
+    await eventRef.update({ status: "completed", completedAt: FieldValue.serverTimestamp() });
     res.status(200).send("ok");
   }
 );

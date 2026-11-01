@@ -3,7 +3,7 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { logger } from "firebase-functions";
 import { createScheduleSchema, scheduleActionSchema } from "./schemas";
-import { parse, requireAuth, requireMoneyMover, audit, TIER_LIMITS, IS_EMULATOR } from "./middleware";
+import { parse, requireAuth, requireMoneyMover, audit, TIER_LIMITS, IS_EMULATOR, CALLABLE_OPTIONS } from "./middleware";
 import { executeTransfer } from "./transfer";
 
 const MAX_FAILURES = 3;
@@ -16,7 +16,7 @@ export function nextRun(from: Date, frequency: "weekly" | "monthly", anchorDay: 
   return new Date(Date.UTC(y, m, Math.min(anchorDay, lastDay), from.getUTCHours(), from.getUTCMinutes()));
 }
 
-export const createSchedule = onCall(async (req) => {
+export const createSchedule = onCall(CALLABLE_OPTIONS, async (req) => {
   const input = parse(createScheduleSchema, req.data);
   const { uid, user, limits } = await requireMoneyMover(req);
   const db = getFirestore();
@@ -43,7 +43,7 @@ export const createSchedule = onCall(async (req) => {
   return { scheduleId: ref.id };
 });
 
-export const scheduleAction = onCall(async (req) => {
+export const scheduleAction = onCall(CALLABLE_OPTIONS, async (req) => {
   const { scheduleId, action } = parse(scheduleActionSchema, req.data);
   const uid = requireAuth(req);
   const db = getFirestore();
@@ -126,7 +126,7 @@ export const runSchedulesTick = onSchedule("every 15 minutes", async () => {
 });
 
 /** DEV ONLY: scheduled functions don't fire in the emulator. */
-export const devRunSchedules = onCall(async (req) => {
+export const devRunSchedules = onCall(CALLABLE_OPTIONS, async (req) => {
   if (!IS_EMULATOR) throw new HttpsError("permission-denied", "Not available");
   requireAuth(req);
   return runDueSchedules();

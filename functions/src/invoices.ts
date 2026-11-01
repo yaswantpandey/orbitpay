@@ -2,13 +2,13 @@ import { getFirestore, FieldValue, Timestamp, DocumentData } from "firebase-admi
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { createInvoiceSchema, invoiceActionSchema, invoiceTotal } from "./schemas";
-import { parse, requireAuth, requireMoneyMover, audit } from "./middleware";
+import { parse, requireAuth, requireMoneyMover, audit, CALLABLE_OPTIONS } from "./middleware";
 import { executeTransfer } from "./transfer";
 import { queueMail } from "./email";
 
 const usd = (c: number) => `$${(c / 100).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
 
-export const createInvoice = onCall(async (req) => {
+export const createInvoice = onCall(CALLABLE_OPTIONS, async (req) => {
   const input = parse(createInvoiceSchema, req.data);
   const { uid, user } = await requireMoneyMover(req);
   const db = getFirestore();
@@ -45,7 +45,7 @@ export const createInvoice = onCall(async (req) => {
   return { invoiceId: ref.id, number };
 });
 
-export const invoiceAction = onCall(async (req) => {
+export const invoiceAction = onCall(CALLABLE_OPTIONS, async (req) => {
   const { invoiceId, action } = parse(invoiceActionSchema, req.data);
   const uid = requireAuth(req);
   const email = req.auth!.token.email_verified ? String(req.auth!.token.email ?? "").toLowerCase() : "";
@@ -137,8 +137,9 @@ async function renderPdf(inv: DocumentData): Promise<string> {
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
   const grey = rgb(0.4, 0.4, 0.4);
   let y = 790;
+  const sanitizePdf = (s: string) => String(s ?? "").replace(/[^\x20-\x7E\xA0-\xFF]/g, " ").trim();
   const text = (s: string, x: number, opts: { size?: number; f?: typeof font; color?: typeof grey } = {}) =>
-    page.drawText(s, { x, y, size: opts.size ?? 10, font: opts.f ?? font, color: opts.color });
+    page.drawText(sanitizePdf(s), { x, y, size: opts.size ?? 10, font: opts.f ?? font, color: opts.color });
 
   text("OrbitPay", 50, { size: 20, f: bold });
   text(`INVOICE ${inv.number}`, 380, { size: 14, f: bold });

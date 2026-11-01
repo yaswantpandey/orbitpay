@@ -1,11 +1,11 @@
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { createPotSchema, potMoveSchema, potIdSchema } from "./schemas";
-import { parse, requireAuth, requireMoneyMover, audit } from "./middleware";
+import { parse, requireAuth, requireMoneyMover, audit, CALLABLE_OPTIONS } from "./middleware";
 
 const MAX_POTS = 20;
 
-export const createPot = onCall(async (req) => {
+export const createPot = onCall(CALLABLE_OPTIONS, async (req) => {
   const { name, targetCents } = parse(createPotSchema, req.data);
   const uid = requireAuth(req);
   const db = getFirestore();
@@ -47,16 +47,25 @@ export async function movePot(uid: string, potId: string, direction: "in" | "out
   });
 }
 
-export const movePotFunds = onCall(async (req) => {
+export const movePotFunds = onCall(CALLABLE_OPTIONS, async (req) => {
   const input = parse(potMoveSchema, req.data);
   // Moving into savings is still a money movement (frozen/KYC rules apply); moving out is always allowed.
-  const uid = input.direction === "in" ? (await requireMoneyMover(req)).uid : requireAuth(req);
+  let uid: string;
+  if (input.direction === "in") {
+    const mover = await requireMoneyMover(req);
+    uid = mover.uid;
+    if (input.amountCents > mover.limits.perTransaction) {
+      throw new HttpsError("resource-exhausted", "Amount exceeds per-transaction limit");
+    }
+  } else {
+    uid = requireAuth(req);
+  }
   const r = await movePot(uid, input.potId, input.direction, input.amountCents, input.idempotencyKey);
   if (!r.replayed) await audit(uid, `pot.${input.direction}`, { potId: input.potId, amountCents: input.amountCents });
   return { ok: true };
 });
 
-export const deletePot = onCall(async (req) => {
+export const deletePot = onCall(CALLABLE_OPTIONS, async (req) => {
   const { potId } = parse(potIdSchema, req.data);
   const uid = requireAuth(req);
   const db = getFirestore();

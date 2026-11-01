@@ -3,14 +3,14 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { logger } from "firebase-functions";
 import Stripe from "stripe";
 import { devKycSchema, adminSetTierSchema } from "./schemas";
-import { parse, requireAuth, requireAdmin, audit, IS_EMULATOR } from "./middleware";
+import { parse, requireAuth, requireAdmin, audit, IS_EMULATOR, CALLABLE_OPTIONS } from "./middleware";
 import { STRIPE_SECRET_KEY } from "./topup";
 
 const DEV_KYC = IS_EMULATOR;
 const APP_URL = process.env.APP_URL ?? "http://localhost:3001";
 
 /** Starts a Stripe Identity document + selfie check and returns the hosted verification URL. */
-export const startKyc = onCall({ secrets: [STRIPE_SECRET_KEY] }, async (req) => {
+export const startKyc = onCall({ ...CALLABLE_OPTIONS, secrets: [STRIPE_SECRET_KEY] }, async (req) => {
   const uid = requireAuth(req);
   const db = getFirestore();
   const user = (await db.doc(`users/${uid}`).get()).data();
@@ -67,7 +67,7 @@ export async function handleIdentityEvent(event: Stripe.Event) {
 }
 
 /** DEV ONLY: simulate the Stripe Identity outcome for the caller's pending session. */
-export const devCompleteKyc = onCall(async (req) => {
+export const devCompleteKyc = onCall(CALLABLE_OPTIONS, async (req) => {
   if (!DEV_KYC) throw new HttpsError("permission-denied", "Not available");
   const uid = requireAuth(req);
   const { outcome } = parse(devKycSchema, req.data);
@@ -77,7 +77,7 @@ export const devCompleteKyc = onCall(async (req) => {
   return { status: outcome };
 });
 
-export const adminSetTier = onCall(async (req) => {
+export const adminSetTier = onCall(CALLABLE_OPTIONS, async (req) => {
   const adminUid = requireAdmin(req);
   const { uid, tier, reason } = parse(adminSetTierSchema, req.data);
   const ref = getFirestore().doc(`users/${uid}`);
