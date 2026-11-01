@@ -4,6 +4,7 @@ import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { createInvoiceSchema, invoiceActionSchema, invoiceTotal } from "./schemas";
 import { parse, requireAuth, requireMoneyMover, audit, CALLABLE_OPTIONS } from "./middleware";
 import { executeTransfer } from "./transfer";
+import { evaluateTransferRisk } from "./risk";
 import { queueMail } from "./email";
 
 const usd = (c: number) => `$${(c / 100).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
@@ -80,6 +81,10 @@ export const invoiceAction = onCall(CALLABLE_OPTIONS, async (req) => {
   const { user, limits } = await requireMoneyMover(req);
   if (inv.totalCents > limits.perTransaction) {
     throw new HttpsError("resource-exhausted", "Amount exceeds per-transaction limit");
+  }
+  const risk = await evaluateTransferRisk(uid, user, inv.issuerUid, inv.totalCents);
+  if (risk.action === "block") {
+    throw new HttpsError("permission-denied", "Payment blocked by security policy");
   }
   const result = await executeTransfer(
     db,

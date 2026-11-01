@@ -13,6 +13,7 @@ export const createPot = onCall(CALLABLE_OPTIONS, async (req) => {
   if (count >= MAX_POTS) throw new HttpsError("resource-exhausted", `You can have up to ${MAX_POTS} goals`);
   const ref = db.collection("pots").doc();
   await ref.set({ uid, name: name.trim(), targetCents, balanceCents: 0, createdAt: FieldValue.serverTimestamp() });
+  await audit(uid, "pot.created", { potId: ref.id, name: name.trim(), targetCents });
   return { potId: ref.id };
 });
 
@@ -76,5 +77,6 @@ export const deletePot = onCall(CALLABLE_OPTIONS, async (req) => {
     if (p.balanceCents > 0) throw new HttpsError("failed-precondition", "Move the money out before deleting this goal");
     tx.delete(ref);
   });
+  await audit(uid, "pot.deleted", { potId });
   return { ok: true };
 });

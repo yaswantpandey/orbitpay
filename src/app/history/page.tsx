@@ -74,7 +74,11 @@ export default function HistoryPage() {
   );
 
   function exportCsv() {
-    const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
+    const esc = (v: string) => {
+      // Neutralize CSV formula injection (OWASP / CWE-1236)
+      const sanitized = /^[\s]*[=+\-@\t\r]/.test(v) ? `'${v}` : v;
+      return `"${sanitized.replace(/"/g, '""')}"`;
+    };
     const rows = [
       ["date", "type", "amount_usd", "balance_after_usd", "counterparty", "note", "tx_id"],
       ...visible.map((e) => [

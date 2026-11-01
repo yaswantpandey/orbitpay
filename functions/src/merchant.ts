@@ -10,6 +10,7 @@ import {
 } from "./schemas";
 import { parse, requireAuth, requireMoneyMover, audit, IS_EMULATOR, CALLABLE_OPTIONS } from "./middleware";
 import { executeTransfer } from "./transfer";
+import { evaluateTransferRisk } from "./risk";
 
 const APP_URL = process.env.APP_URL ?? "http://localhost:3001";
 const CHECKOUT_TTL_MS = 24 * 60 * 60 * 1000;
@@ -130,7 +131,7 @@ export const setMerchantProfile = onCall(CALLABLE_OPTIONS, async (req) => {
 });
 
 export const rotateWebhookSecret = onCall(CALLABLE_OPTIONS, async (req) => {
-  const uid = requireAuth(req);
+  const { uid } = await requireMoneyMover(req);
   const db = getFirestore();
   const merchantSnap = await db.doc(`merchants/${uid}`).get();
   if (!merchantSnap.exists) throw new HttpsError("failed-precondition", "Set up your merchant profile first");
@@ -147,7 +148,7 @@ export const rotateWebhookSecret = onCall(CALLABLE_OPTIONS, async (req) => {
 
 /** Returns the plaintext key exactly once; only its SHA-256 is stored. */
 export const createApiKey = onCall(CALLABLE_OPTIONS, async (req) => {
-  const uid = requireAuth(req);
+  const { uid } = await requireMoneyMover(req);
   const db = getFirestore();
   if (!(await db.doc(`merchants/${uid}`).get()).exists) throw new HttpsError("failed-precondition", "Set up your merchant profile first");
   const active = await db.collection("apiKeys").where("uid", "==", uid).where("revoked", "==", false).count().get();
@@ -160,7 +161,7 @@ export const createApiKey = onCall(CALLABLE_OPTIONS, async (req) => {
 });
 
 export const revokeApiKey = onCall(CALLABLE_OPTIONS, async (req) => {
-  const uid = requireAuth(req);
+  const { uid } = await requireMoneyMover(req);
   const { keyId } = parse(apiKeyActionSchema, req.data);
   const ref = getFirestore().doc(`apiKeys/${keyId}`);
   const k = (await ref.get()).data();
@@ -206,8 +207,10 @@ function serializeCheckout(id: string, c: FirebaseFirestore.DocumentData) {
 /** Merchant creates a checkout from the dashboard (same as the API, but authenticated by session). */
 export const createCheckout = onCall(CALLABLE_OPTIONS, async (req) => {
   const input = parse(createCheckoutSchema, req.data);
-  const uid = requireAuth(req);
-  return createCheckoutDoc(uid, input);
+  const { uid } = await requireMoneyMover(req);
+  const doc = await createCheckoutDoc(uid, input);
+  await audit(uid, "checkout.created", { checkoutId: doc.id, amountCents: doc.amount });
+  return doc;
 });
 
 /** Public view of a checkout for the hosted payment page (signed-in payers). */
@@ -230,6 +233,10 @@ export const payCheckout = onCall(CALLABLE_OPTIONS, async (req) => {
   if (!c) throw new HttpsError("not-found", "Checkout not found");
   if (c.merchantUid === uid) throw new HttpsError("invalid-argument", "You can't pay your own checkout");
   if (c.amountCents > limits.perTransaction) throw new HttpsError("resource-exhausted", "Amount exceeds per-transaction limit");
+  const risk = await evaluateTransferRisk(uid, user, c.merchantUid, c.amountCents);
+  if (risk.action === "block") {
+    throw new HttpsError("permission-denied", "Payment blocked by security policy");
+  }
 
   const result = await executeTransfer(
     db,
@@ -407,7 +414,7 @@ export const retryWebhooksTick = onSchedule("every 5 minutes", async () => {
 /** DEV ONLY: retry pending deliveries now, ignoring backoff. */
 export const devRetryWebhooks = onCall(CALLABLE_OPTIONS, async (req) => {
   if (!IS_EMULATOR) throw new HttpsError("permission-denied", "Not available");
-  const uid = requireAuth(req);
+  const { uid } = await requireMoneyMover(req);
   const pending = await getFirestore().collection("webhookDeliveries")
     .where("merchantUid", "==", uid).where("status", "==", "pending").get();
   await Promise.all(pending.docs.map((d) => d.ref.update({ nextAttemptAt: Timestamp.now() })));

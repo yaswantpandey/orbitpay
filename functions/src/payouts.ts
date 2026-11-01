@@ -5,6 +5,7 @@ import Stripe from "stripe";
 import { payoutSchema, devSettlePayoutSchema } from "./schemas";
 import { parse, requireAuth, requireMoneyMover, audit, bumpStats, IS_EMULATOR, CALLABLE_OPTIONS, dayKey } from "./middleware";
 import { STRIPE_SECRET_KEY } from "./topup";
+import { RISK } from "./risk";
 
 const DEV_PAYOUTS = IS_EMULATOR;
 const APP_URL = process.env.APP_URL ?? "http://localhost:3001";
@@ -40,6 +41,10 @@ export const createPayoutAccountLink = onCall({ ...CALLABLE_OPTIONS, secrets: [S
 export const requestPayout = onCall({ ...CALLABLE_OPTIONS, secrets: [STRIPE_SECRET_KEY] }, async (req) => {
   const input = parse(payoutSchema, req.data);
   const { uid, user, limits } = await requireMoneyMover(req);
+  const created = (user.createdAt as FirebaseFirestore.Timestamp | undefined)?.toMillis() ?? 0;
+  if (Date.now() - created < RISK.newAccountMs && input.amountCents > RISK.newAccountMaxCents) {
+    throw new HttpsError("permission-denied", "New accounts cannot withdraw more than $200 within the first 24 hours");
+  }
   if (input.amountCents > limits.perTransaction) {
     throw new HttpsError("resource-exhausted", "Amount exceeds per-transaction limit");
   }

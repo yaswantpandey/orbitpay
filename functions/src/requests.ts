@@ -3,6 +3,7 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { createRequestSchema, respondRequestSchema } from "./schemas";
 import { parse, requireAuth, requireMoneyMover, audit, CALLABLE_OPTIONS } from "./middleware";
 import { executeTransfer } from "./transfer";
+import { evaluateTransferRisk } from "./risk";
 
 export const REQUEST_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -70,6 +71,10 @@ export const respondRequest = onCall(CALLABLE_OPTIONS, async (req) => {
   const { user, limits } = await requireMoneyMover(req);
   if (r.amountCents > limits.perTransaction) {
     throw new HttpsError("resource-exhausted", "Amount exceeds per-transaction limit");
+  }
+  const risk = await evaluateTransferRisk(uid, user, r.requesterUid, r.amountCents);
+  if (risk.action === "block") {
+    throw new HttpsError("permission-denied", "Payment blocked by security policy");
   }
   const result = await executeTransfer(
     db,
