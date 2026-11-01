@@ -2,7 +2,7 @@ import { initializeApp } from "firebase-admin/app";
 
 initializeApp();
 
-export { bootstrapUser, devVerifyKyc } from "./user";
+export { bootstrapUser, devVerifyKyc, onContactCreated, onContactDeleted } from "./user";
 export { transfer } from "./transfer";
 export { createTopup, stripeWebhook } from "./topup";
 export { createRequest, respondRequest } from "./requests";
@@ -18,7 +18,7 @@ export { emailOnNotification, deliverMail } from "./email";
 export { convert } from "./currencies";
 export { createPot, movePotFunds, deletePot } from "./pots";
 export {
-  setMerchantProfile, createApiKey, revokeApiKey, createCheckout, getCheckout, payCheckout, api,
+  setMerchantProfile, rotateWebhookSecret, createApiKey, revokeApiKey, createCheckout, getCheckout, payCheckout, api,
   deliverWebhookOnCreate, retryWebhooksTick, devRetryWebhooks,
 } from "./merchant";
 export { adminDecideHold, adminListHolds } from "./risk";

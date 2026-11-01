@@ -80,17 +80,47 @@ export const setMerchantProfile = onCall(async (req) => {
   const input = parse(merchantProfileSchema, req.data);
   const { uid, user } = await requireMoneyMover(req);
   checkWebhookUrl(input.webhookUrl);
-  const ref = getFirestore().doc(`merchants/${uid}`);
-  const existing = (await ref.get()).data();
+  const db = getFirestore();
+  const ref = db.doc(`merchants/${uid}`);
+  const secretRef = db.doc(`merchantSecrets/${uid}`);
+  const [existingMerchant, existingSecretDoc] = await Promise.all([ref.get(), secretRef.get()]);
+  const existing = existingMerchant.data();
+  const existingSecret = existingSecretDoc.data()?.webhookSecret ?? existing?.webhookSecret;
+
+  let newSecret: string | null = null;
+  if (!existingSecret) {
+    newSecret = `whsec_${randomBytes(24).toString("base64url")}`;
+    await secretRef.set({
+      uid,
+      webhookSecret: newSecret,
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  }
+
   await ref.set({
     uid, email: user.email, businessName: input.businessName.trim(), webhookUrl: input.webhookUrl,
-    // Signing secret is generated once and kept across profile edits.
-    webhookSecret: existing?.webhookSecret ?? `whsec_${randomBytes(24).toString("base64url")}`,
     enabled: true, updatedAt: FieldValue.serverTimestamp(),
     ...(existing ? {} : { createdAt: FieldValue.serverTimestamp() }),
   }, { merge: true });
   await audit(uid, existing ? "merchant.updated" : "merchant.enabled", { businessName: input.businessName });
-  return { ok: true };
+  return { ok: true, ...(newSecret ? { webhookSecret: newSecret } : {}) };
+});
+
+export const rotateWebhookSecret = onCall(async (req) => {
+  const uid = requireAuth(req);
+  const db = getFirestore();
+  const merchantSnap = await db.doc(`merchants/${uid}`).get();
+  if (!merchantSnap.exists) throw new HttpsError("failed-precondition", "Set up your merchant profile first");
+  const newSecret = `whsec_${randomBytes(24).toString("base64url")}`;
+  await db.doc(`merchantSecrets/${uid}`).set({
+    uid,
+    webhookSecret: newSecret,
+    rotatedAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
+  }, { merge: true });
+  await audit(uid, "merchant.secret_rotated", {});
+  return { ok: true, webhookSecret: newSecret };
 });
 
 /** Returns the plaintext key exactly once; only its SHA-256 is stored. */
@@ -269,9 +299,12 @@ export async function attemptDelivery(id: string) {
     return cur;
   });
   if (!d) return "skipped";
-  const [merchant, checkout] = await Promise.all([
-    db.doc(`merchants/${d.merchantUid}`).get(), db.doc(`checkouts/${d.checkoutId}`).get(),
+  const [merchant, secretDoc, checkout] = await Promise.all([
+    db.doc(`merchants/${d.merchantUid}`).get(),
+    db.doc(`merchantSecrets/${d.merchantUid}`).get(),
+    db.doc(`checkouts/${d.checkoutId}`).get(),
   ]);
+  const secret = secretDoc.data()?.webhookSecret ?? merchant.data()?.webhookSecret ?? "";
   const body = JSON.stringify({ id, type: d.type, created: Math.floor(Date.now() / 1000),
     data: serializeCheckout(d.checkoutId, checkout.data()!) });
   let ok = false, status = 0, error = "";
@@ -280,8 +313,8 @@ export async function attemptDelivery(id: string) {
       method: "POST", redirect: "manual", signal: AbortSignal.timeout(10_000),
       headers: {
         "content-type": "application/json",
-        "orbitpay-signature": signPayload(merchant.data()!.webhookSecret, body),
-        "fastpay-signature": signPayload(merchant.data()!.webhookSecret, body),
+        "orbitpay-signature": signPayload(secret, body),
+        "fastpay-signature": signPayload(secret, body),
       },
       body,
     });

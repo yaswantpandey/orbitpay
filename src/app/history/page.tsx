@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   collection, getDocs, limit, orderBy, query, startAfter, where,
   QueryConstraint, QueryDocumentSnapshot, Timestamp,
@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { TransactionList } from "@/components/transaction-list";
 import { useAuth } from "@/components/auth-provider";
+import { useLedgerTags } from "@/lib/hooks";
 import { db } from "@/lib/firebase";
 import type { LedgerEntry } from "@/types";
 
@@ -27,6 +28,7 @@ const TYPES = [
 
 export default function HistoryPage() {
   const { user } = useAuth();
+  const tags = useLedgerTags();
   const [type, setType] = useState("all");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -66,6 +68,10 @@ export default function HistoryPage() {
   const visible = s
     ? entries.filter((e) => `${e.counterpartyEmail ?? ""} ${e.note ?? ""} ${e.txId}`.toLowerCase().includes(s))
     : entries;
+  const taggedVisible = useMemo(
+    () => visible.map((e) => ({ ...e, category: tags[e.id] ?? e.category })),
+    [visible, tags]
+  );
 
   function exportCsv() {
     const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
@@ -119,7 +125,7 @@ export default function HistoryPage() {
             <Input id="search" placeholder="Email or note" value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
         </div>
-        <TransactionList entries={visible} categorize
+        <TransactionList entries={taggedVisible} categorize
           onCategorized={(id, category) => setEntries((es) => es.map((x) => (x.id === id ? { ...x, category } : x)))} />
         {hasMore && (
           <Button variant="outline" className="w-full" onClick={() => load(cursor)} disabled={loading}>

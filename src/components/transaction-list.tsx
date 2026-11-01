@@ -1,7 +1,8 @@
 "use client";
 
-import { doc, updateDoc } from "firebase/firestore";
+import { deleteDoc, doc, serverTimestamp, setDoc } from "firebase/firestore";
 import { toast } from "sonner";
+import { useAuth } from "@/components/auth-provider";
 import { Badge } from "@/components/ui/badge";
 import { db } from "@/lib/firebase";
 import { formatCents } from "@/lib/format";
@@ -26,17 +27,33 @@ const LABELS: Record<LedgerEntryType, string> = {
 /** Moves within your own accounts aren't spending, so they can't be categorised. */
 const INTERNAL = new Set<LedgerEntryType>(["fx_in", "fx_out", "savings_in", "savings_out", "hold"]);
 
-/** `categorize` shows a category picker on outgoing entries (the only ledger field the client may write). */
+/** `categorize` shows a category picker on outgoing entries (saved in `/ledgerTags/{entryId}`). */
 export function TransactionList({ entries, categorize = false, onCategorized }: {
   entries: LedgerEntry[];
   categorize?: boolean;
   onCategorized?: (id: string, category: string) => void;
 }) {
+  const { user } = useAuth();
   const { currency, rate } = useDisplayRate();
-  const setCategory = (id: string, category: string) =>
-    updateDoc(doc(db, "ledger", id), { category })
-      .then(() => onCategorized?.(id, category))
-      .catch((e) => toast.error((e as Error).message));
+
+  const setCategory = async (id: string, category: string) => {
+    if (!user) return;
+    try {
+      if (category) {
+        await setDoc(doc(db, "ledgerTags", id), {
+          uid: user.uid,
+          category,
+          updatedAt: serverTimestamp(),
+        });
+      } else {
+        await deleteDoc(doc(db, "ledgerTags", id));
+      }
+      onCategorized?.(id, category);
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+  };
+
   if (entries.length === 0) {
     return <p className="py-8 text-center text-sm text-muted-foreground">No transactions yet.</p>;
   }
@@ -57,7 +74,7 @@ export function TransactionList({ entries, categorize = false, onCategorized }: 
               </p>
               <p className="text-xs text-muted-foreground">{e.createdAt?.toDate().toLocaleString() ?? "…"}</p>
               {categorize && !credit && !INTERNAL.has(e.type) && (
-                <select aria-label="Category" value={e.category ?? ""} onChange={(ev) => setCategory(e.id, ev.target.value)}
+                <select aria-label="Category" value={e.category ?? ""} onChange={(ev) => void setCategory(e.id, ev.target.value)}
                   className="mt-1 h-6 rounded border bg-background px-1 text-xs capitalize">
                   <option value="">Uncategorised</option>
                   {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}

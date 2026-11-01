@@ -29,6 +29,7 @@ export default function MerchantPage() {
   const deliveries = useWebhookDeliveries();
   const [businessName, setBusinessName] = useState("");
   const [webhookUrl, setWebhookUrl] = useState("");
+  const [revealedSecret, setRevealedSecret] = useState<string | null>(null);
   const [newKey, setNewKey] = useState<string | null>(null);
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
@@ -56,8 +57,19 @@ export default function MerchantPage() {
 
   const saveProfile = (e: React.FormEvent) => {
     e.preventDefault();
-    run(() => call("setMerchantProfile", { businessName: businessName.trim(), webhookUrl: webhookUrl.trim() }), "Merchant profile saved");
+    run(async () => {
+      const res = await call("setMerchantProfile", { businessName: businessName.trim(), webhookUrl: webhookUrl.trim() });
+      const data = res.data as { ok: boolean; webhookSecret?: string };
+      if (data.webhookSecret) {
+        setRevealedSecret(data.webhookSecret);
+      }
+    }, "Merchant profile saved");
   };
+
+  const rotateSecret = () => run(async () => {
+    const { data } = await httpsCallable<unknown, { webhookSecret: string }>(functions, "rotateWebhookSecret")({});
+    setRevealedSecret(data.webhookSecret);
+  }, "Webhook signing secret rotated");
 
   const createKey = () => run(async () => {
     const { data } = await httpsCallable<unknown, { key: string }>(functions, "createApiKey")({});
@@ -98,12 +110,25 @@ export default function MerchantPage() {
             <Button type="submit" className="sm:col-span-2" disabled={busy}>{merchant ? "Save" : "Enable merchant mode"}</Button>
           </form>
           {merchant && (
-            <div className="space-y-1 text-sm">
-              <Label>Webhook signing secret</Label>
-              <div className="flex gap-2">
-                <code className="flex-1 truncate rounded border bg-muted px-2 py-1 text-xs">{merchant.webhookSecret}</code>
-                <Button size="sm" variant="outline" onClick={() => copy(merchant.webhookSecret, "Secret")}><Copy className="size-4" /></Button>
+            <div className="space-y-2 text-sm">
+              <div className="flex items-center justify-between">
+                <Label>Webhook signing secret</Label>
+                <Button size="sm" variant="outline" onClick={rotateSecret} disabled={busy}>Rotate secret</Button>
               </div>
+              {revealedSecret ? (
+                <div className="space-y-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+                  <p className="font-medium">Copy this webhook signing secret now — it will not be shown again.</p>
+                  <div className="flex gap-2">
+                    <code className="flex-1 break-all rounded bg-white px-2 py-1 text-xs">{revealedSecret}</code>
+                    <Button size="sm" variant="outline" onClick={() => copy(revealedSecret, "Secret")}><Copy className="size-4" /></Button>
+                  </div>
+                  <Button size="sm" variant="ghost" onClick={() => setRevealedSecret(null)}>Done</Button>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between rounded border bg-muted px-3 py-2 text-xs text-muted-foreground">
+                  <span>•••••••••••••••• (Stored securely server-side)</span>
+                </div>
+              )}
               <p className="text-xs text-muted-foreground">
                 Verify the <code>OrbitPay-Signature</code> header: <code>v1 = HMAC_SHA256(secret, t + &quot;.&quot; + body)</code>; reject if <code>t</code> is older than 5 minutes.
               </p>

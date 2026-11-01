@@ -9,22 +9,26 @@ service cloud.firestore {
       allow read: if isSelf(uid);
       allow update: if isSelf(uid)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayCurrency', 'emailNotifications'])
-        && request.resource.data.get('displayCurrency', 'USD') is string
-        && request.resource.data.get('displayCurrency', 'USD').size() == 3
+        && request.resource.data.get('displayCurrency', 'USD') in ['USD', 'EUR', 'GBP', 'INR', 'JPY', 'CAD', 'AUD']
         && request.resource.data.get('emailNotifications', true) is bool;
       allow create, delete: if false;
 
       // Saved contacts: owned and edited by the user; email/name only.
       match /contacts/{contactId} {
         allow read, delete: if isSelf(uid);
-        allow create, update: if isSelf(uid)
+        allow create: if isSelf(uid)
+          && get(/databases/$(database)/documents/users/$(uid)).data.get('contactCount', 0) < 100
           && request.resource.data.keys().hasOnly(['email', 'name', 'createdAt'])
           && request.resource.data.email is string
           && request.resource.data.email.size() <= 200
           && request.resource.data.email.matches('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$')
           && request.resource.data.name is string
           && request.resource.data.name.size() <= 100
-          && (!('createdAt' in request.resource.data) || request.resource.data.createdAt is timestamp);
+          && request.resource.data.createdAt == request.time;
+        allow update: if isSelf(uid)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name'])
+          && request.resource.data.name is string
+          && request.resource.data.name.size() <= 100;
       }
     }
 
@@ -35,12 +39,26 @@ service cloud.firestore {
     }
     match /ledger/{entryId} {
       allow read: if signedIn() && resource.data.uid == request.auth.uid;
-      // The only client write: tagging your own entry with a spending category.
-      allow update: if signedIn() && resource.data.uid == request.auth.uid
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['category'])
+      allow write: if false;
+    }
+    // Spending category tags on ledger entries: owned by the user.
+    match /ledgerTags/{entryId} {
+      allow read: if signedIn() && resource.data.uid == request.auth.uid;
+      allow create: if signedIn()
+        && request.resource.data.uid == request.auth.uid
+        && get(/databases/$(database)/documents/ledger/$(entryId)).data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['uid', 'category', 'updatedAt'])
         && request.resource.data.category in
-          ['', 'food', 'transport', 'shopping', 'bills', 'entertainment', 'rent', 'travel', 'health', 'other'];
-      allow create, delete: if false;
+          ['', 'food', 'transport', 'shopping', 'bills', 'entertainment', 'rent', 'travel', 'health', 'other']
+        && (!('updatedAt' in request.resource.data) || request.resource.data.updatedAt is timestamp);
+      allow update: if signedIn()
+        && resource.data.uid == request.auth.uid
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['uid', 'category', 'updatedAt'])
+        && request.resource.data.category in
+          ['', 'food', 'transport', 'shopping', 'bills', 'entertainment', 'rent', 'travel', 'health', 'other']
+        && (!('updatedAt' in request.resource.data) || request.resource.data.updatedAt is timestamp);
+      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
     }
     match /transfers/{txId} {
       allow read: if signedIn() && request.auth.uid in resource.data.participants;
@@ -96,8 +114,9 @@ service cloud.firestore {
     match /conversions/{id} { allow read: if ownsBy('uid'); allow write: if false; }
     match /pots/{id} { allow read: if ownsBy('uid'); allow write: if false; }
     match /holds/{id} { allow read: if ownsBy('fromUid'); allow write: if false; }
-    // Includes the webhook signing secret, which the merchant needs to verify deliveries.
     match /merchants/{uid} { allow read: if isSelf(uid); allow write: if false; }
+    // Webhook signing secret stored server-side; never client-readable.
+    match /merchantSecrets/{uid} { allow read, write: if false; }
     // Only the hash and display prefix are stored; never the key itself.
     match /apiKeys/{hash} { allow read: if ownsBy('uid'); allow write: if false; }
     match /checkouts/{id} { allow read: if ownsBy('merchantUid'); allow write: if false; }

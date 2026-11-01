@@ -1,5 +1,6 @@
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
+import { onDocumentCreated, onDocumentDeleted } from "firebase-functions/v2/firestore";
 import { requireAuth, audit, IS_EMULATOR } from "./middleware";
 
 /** Creates the user profile and empty wallet on first sign-in. Idempotent. */
@@ -22,6 +23,7 @@ export const bootstrapUser = onCall(async (req) => {
         mfaEnabled,
         displayCurrency: "USD",
         tier: 0,
+        contactCount: 0,
         createdAt: FieldValue.serverTimestamp(),
       });
       tx.set(walletRef, {
@@ -47,4 +49,18 @@ export const devVerifyKyc = onCall(async (req) => {
   await getFirestore().doc(`users/${uid}`).update({ kycStatus: "verified", tier: 1 });
   await audit(uid, "kyc.dev_verified", {});
   return { ok: true };
+});
+
+export const onContactCreated = onDocumentCreated("users/{uid}/contacts/{contactId}", async (e) => {
+  const uid = e.params.uid;
+  await getFirestore().doc(`users/${uid}`).set({
+    contactCount: FieldValue.increment(1),
+  }, { merge: true });
+});
+
+export const onContactDeleted = onDocumentDeleted("users/{uid}/contacts/{contactId}", async (e) => {
+  const uid = e.params.uid;
+  await getFirestore().doc(`users/${uid}`).set({
+    contactCount: FieldValue.increment(-1),
+  }, { merge: true });
 });

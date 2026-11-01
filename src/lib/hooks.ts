@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { collection, doc, limit, onSnapshot, orderBy, query, where, Query } from "firebase/firestore";
 import { db } from "./firebase";
 import { useAuth } from "@/components/auth-provider";
@@ -128,7 +128,26 @@ export function useWallet() {
   return wallet;
 }
 
+export function useLedgerTags() {
+  const { user } = useAuth();
+  const [tags, setTags] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (!user) return;
+    const q = query(collection(db, "ledgerTags"), where("uid", "==", user.uid));
+    return onSnapshot(q, (snap) => {
+      const map: Record<string, string> = {};
+      snap.docs.forEach((d) => {
+        const cat = d.data().category;
+        if (typeof cat === "string") map[d.id] = cat;
+      });
+      setTags(map);
+    });
+  }, [user]);
+  return tags;
+}
+
 export function useLedger(max = 50) {
+  const tags = useLedgerTags();
   const { user } = useAuth();
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
   useEffect(() => {
@@ -136,7 +155,7 @@ export function useLedger(max = 50) {
     const q = query(collection(db, "ledger"), where("uid", "==", user.uid), orderBy("createdAt", "desc"), limit(max));
     return onSnapshot(q, (s) => setEntries(s.docs.map((d) => ({ id: d.id, ...d.data() }) as LedgerEntry)));
   }, [user, max]);
-  return entries;
+  return useMemo(() => entries.map((e) => ({ ...e, category: tags[e.id] ?? e.category })), [entries, tags]);
 }
 
 export function usePendingTopups() {
