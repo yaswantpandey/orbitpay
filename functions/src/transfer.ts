@@ -56,6 +56,16 @@ export async function executeTransfer(db: Firestore, t: TransferInput, hook?: Se
   const dailyRef = db.doc(`dailyTotals/${t.fromUid}_${dayKey()}`);
   const payloadHash = t.payloadHash ?? computePayloadHash(t.toUid, t.amountCents, t.note);
 
+  // Fast-path for replayed requests: avoids contending on wallet transactions if already completed
+  const fastSnap = await transferRef.get();
+  if (fastSnap.exists) {
+    const data = fastSnap.data()!;
+    if (data.payloadHash && data.payloadHash !== payloadHash) {
+      throw new HttpsError("invalid-argument", "Idempotency key reused with different transfer parameters");
+    }
+    return { txId, replayed: true };
+  }
+
   return db.runTransaction(async (tx) => {
     const existing = await tx.get(transferRef);
     if (existing.exists) {
@@ -142,7 +152,7 @@ export async function executeTransfer(db: Firestore, t: TransferInput, hook?: Se
     });
     if (hook) tx.update(hook.ref, hook.stampPayment === false ? hook.update : { ...hook.update, txId, paidAt: now });
     return { txId, replayed: false };
-  });
+  }, { maxAttempts: 15 });
 }
 
 export const transfer = onCall(CALLABLE_OPTIONS, async (req) => {

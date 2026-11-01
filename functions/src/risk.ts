@@ -64,6 +64,16 @@ export async function placeHold(t: TransferInput, reasons: string[]) {
   const dailyRef = db.doc(`dailyTotals/${t.fromUid}_${dayKey()}`);
   const payloadHash = t.payloadHash ?? computePayloadHash(t.toUid, t.amountCents, t.note);
 
+  // Fast-path for replayed holds
+  const fastSnap = await holdRef.get();
+  if (fastSnap.exists) {
+    const data = fastSnap.data()!;
+    if (data.payloadHash && data.payloadHash !== payloadHash) {
+      throw new HttpsError("invalid-argument", "Idempotency key reused with different transfer parameters");
+    }
+    return { holdId, replayed: true };
+  }
+
   return db.runTransaction(async (tx) => {
     const [existing, wallet, daily] = await Promise.all([tx.get(holdRef), tx.get(walletRef), tx.get(dailyRef)]);
     if (existing.exists) {
@@ -95,7 +105,7 @@ export async function placeHold(t: TransferInput, reasons: string[]) {
       note: "Your payment is being reviewed for your security. We'll let you know shortly.", read: false, createdAt: now,
     });
     return { holdId, replayed: false };
-  });
+  }, { maxAttempts: 15 });
 }
 
 /** Admin approves (pays the recipient) or rejects (refunds the sender). Exactly once; a repeat approve is a replay. */
