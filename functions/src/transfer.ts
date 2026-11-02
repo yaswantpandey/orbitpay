@@ -66,7 +66,8 @@ export async function executeTransfer(db: Firestore, t: TransferInput, hook?: Se
     return { txId, replayed: true };
   }
 
-  return db.runTransaction(async (tx) => {
+  try {
+    return await db.runTransaction(async (tx) => {
     const existing = await tx.get(transferRef);
     if (existing.exists) {
       const data = existing.data()!;
@@ -151,8 +152,19 @@ export async function executeTransfer(db: Firestore, t: TransferInput, hook?: Se
       note: t.note, read: false, createdAt: now,
     });
     if (hook) tx.update(hook.ref, hook.stampPayment === false ? hook.update : { ...hook.update, txId, paidAt: now });
-    return { txId, replayed: false };
-  }, { maxAttempts: 15 });
+      return { txId, replayed: false };
+    }, { maxAttempts: 15 });
+  } catch (err) {
+    const committedSnap = await transferRef.get();
+    if (committedSnap.exists) {
+      const data = committedSnap.data()!;
+      if (data.payloadHash && data.payloadHash !== payloadHash) {
+        throw new HttpsError("invalid-argument", "Idempotency key reused with different transfer parameters");
+      }
+      return { txId, replayed: true };
+    }
+    throw err;
+  }
 }
 
 export const transfer = onCall(CALLABLE_OPTIONS, async (req) => {

@@ -74,7 +74,8 @@ export async function placeHold(t: TransferInput, reasons: string[]) {
     return { holdId, replayed: true };
   }
 
-  return db.runTransaction(async (tx) => {
+  try {
+    return await db.runTransaction(async (tx) => {
     const [existing, wallet, daily] = await Promise.all([tx.get(holdRef), tx.get(walletRef), tx.get(dailyRef)]);
     if (existing.exists) {
       const data = existing.data()!;
@@ -104,8 +105,19 @@ export async function placeHold(t: TransferInput, reasons: string[]) {
       uid: t.fromUid, kind: "hold", amountCents: t.amountCents, fromEmail: t.toEmail,
       note: "Your payment is being reviewed for your security. We'll let you know shortly.", read: false, createdAt: now,
     });
-    return { holdId, replayed: false };
-  }, { maxAttempts: 15 });
+      return { holdId, replayed: false };
+    }, { maxAttempts: 15 });
+  } catch (err) {
+    const committedSnap = await holdRef.get();
+    if (committedSnap.exists) {
+      const data = committedSnap.data()!;
+      if (data.payloadHash && data.payloadHash !== payloadHash) {
+        throw new HttpsError("invalid-argument", "Idempotency key reused with different transfer parameters");
+      }
+      return { holdId, replayed: true };
+    }
+    throw err;
+  }
 }
 
 /** Admin approves (pays the recipient) or rejects (refunds the sender). Exactly once; a repeat approve is a replay. */
